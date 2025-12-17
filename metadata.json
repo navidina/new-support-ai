@@ -1,0 +1,5 @@
+{
+  "name": "new Rayan Ham-Afza Support",
+  "description": "A local RAG-based support assistant for financial software troubleshooting, simulating connection to Ollama and ChromaDB.",
+  "requestFramePermissions": []
+}
