@@ -184,6 +184,11 @@ export const useRAGApplication = () => {
         }
 
         try {
+            // Get recent history for context-aware answers (last 6 messages excluding current)
+            const history = messages
+                .filter(m => !m.isThinking && m.id !== 'init-1')
+                .slice(-6);
+
             const response = await processQuery(
                 queryText, 
                 customChunks, 
@@ -201,7 +206,8 @@ export const useRAGApplication = () => {
                 }, 
                 categoryFilter,
                 1,
-                useWebSearch
+                useWebSearch,
+                history // Pass history for rewriting
             );
 
             if (response.error === "OLLAMA_CONNECTION_REFUSED") {

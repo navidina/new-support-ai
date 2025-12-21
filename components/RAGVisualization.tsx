@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { PipelineData } from '../types';
-import { Search, Database, Cpu, BrainCircuit, Filter, ChevronDown, ChevronUp, Activity } from 'lucide-react';
+import { Search, Database, Cpu, BrainCircuit, Filter, ChevronDown, ChevronUp, Activity, Zap } from 'lucide-react';
 import { toPersianDigits } from '../services/textProcessor';
 
 interface RAGVisualizationProps {
@@ -26,9 +26,9 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
 
     const steps = [
         { id: 'analyzing', label: 'آنالیز معنایی', icon: Search, color: 'text-blue-400' },
-        { id: 'vectorizing', label: 'بردارسازی', icon: BrainCircuit, color: 'text-violet-400' },
-        { id: 'searching', label: 'جستجو', icon: Database, color: 'text-amber-400' },
-        { id: 'generating', label: 'تولید پاسخ', icon: Cpu, color: 'text-emerald-400' },
+        { id: 'vectorizing', label: 'بهینه‌سازی کوئری', icon: BrainCircuit, color: 'text-violet-400' },
+        { id: 'searching', label: 'جستجو در اسناد', icon: Database, color: 'text-amber-400' },
+        { id: 'generating', label: 'تولید پاسخ نهایی', icon: Cpu, color: 'text-emerald-400' },
     ];
 
     const currentStepIndex = steps.findIndex(s => s.id === data.step);
@@ -36,7 +36,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
     const isProcessing = data.step !== 'generating' && data.step !== 'idle';
 
     const getStatusText = () => {
-        if (data.step === 'generating') return 'پردازش تکمیل شد';
+        if (data.step === 'generating') return 'پردازش با موفقیت انجام شد';
         if (data.step === 'idle') return 'آماده';
         return activeStep.label + '...';
     };
@@ -62,7 +62,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                             {isProcessing && <span className="flex h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>}
                         </span>
                         <span className="text-[10px] text-slate-400 font-sans mt-0.5">
-                            {toPersianDigits((elapsed / 1000).toFixed(1))}s
+                            زمان کل: {toPersianDigits((elapsed / 1000).toFixed(1))} ثانیه
                         </span>
                     </div>
                 </div>
@@ -96,25 +96,31 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                     </div>
 
                                     {/* Content */}
-                                    <div className="flex-1 pt-1 min-w-0">
+                                    <div className="flex-1 pt-1 min-w-0 text-right">
                                         <h4 className={`text-xs font-bold ${isCurrent ? 'text-slate-200' : 'text-slate-500'}`}>
                                             {step.label}
                                         </h4>
                                         
                                         {/* Step Details */}
-                                        {step.id === 'analyzing' && (isCurrent || isDone) && data.extractedKeywords && (
+                                        {step.id === 'analyzing' && (isCurrent || isDone) && data.expandedQuery && (
+                                            <div className="mt-2 p-2 rounded bg-indigo-950/40 border border-indigo-900/50 flex flex-col gap-1.5 animate-fade-in">
+                                                <div className="flex items-center gap-1.5 text-[9px] text-indigo-300 font-bold uppercase tracking-wider">
+                                                    <Zap className="w-3 h-3" />
+                                                    هسته معنایی (AI Intent)
+                                                </div>
+                                                <div className="text-[10px] text-slate-200 leading-5">
+                                                    {data.expandedQuery}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {step.id === 'vectorizing' && (isCurrent || isDone) && data.extractedKeywords && (
                                             <div className="mt-2 flex flex-wrap gap-1.5 animate-fade-in">
-                                                {data.extractedKeywords.slice(0, 5).map((k, i) => (
+                                                {data.extractedKeywords.slice(0, 6).map((k, i) => (
                                                     <span key={i} className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-blue-300 text-[9px]">
                                                         {k}
                                                     </span>
                                                 ))}
-                                            </div>
-                                        )}
-
-                                        {step.id === 'vectorizing' && (isCurrent || isDone) && data.vectorPreview && (
-                                            <div className="mt-2 p-1.5 rounded bg-black/40 border border-slate-800 font-mono text-[9px] text-violet-300 truncate">
-                                                {data.vectorPreview}
                                             </div>
                                         )}
 
@@ -123,7 +129,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                                 {data.retrievedCandidates.slice(0, 2).map((doc, i) => (
                                                     <div key={i} className="flex items-center justify-between text-[9px] text-slate-400 bg-slate-800/50 p-1 rounded border border-slate-700/50">
                                                         <span className="truncate max-w-[120px]">{doc.title}</span>
-                                                        <span className="text-amber-300">{doc.score.toFixed(2)}</span>
+                                                        <span className="text-amber-300 font-mono">{doc.score.toFixed(2)}</span>
                                                     </div>
                                                 ))}
                                             </div>

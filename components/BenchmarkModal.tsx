@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Play, Award, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, FileText, BarChart2, Download, Trash2, History, Upload, FileType, Database, ThumbsUp, ThumbsDown, ShieldCheck, Target } from 'lucide-react';
+import { X, Play, Award, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, FileText, BarChart2, Download, Trash2, History, Upload, FileType, Database, ThumbsUp, ThumbsDown, ShieldCheck, Target, Ticket, MessageSquare } from 'lucide-react';
 import { BenchmarkResult, KnowledgeChunk, BenchmarkRun, BenchmarkCase, FineTuningRecord } from '../types';
 import { BENCHMARK_DATASET } from '../services/benchmarkData';
-import { runBenchmark, saveBenchmarkRun, loadBenchmarkHistory, deleteBenchmarkRun, parseBenchmarkDocx, saveFineTuningRecord, getSettings } from '../services/mockBackend';
+import { runBenchmark, saveBenchmarkRun, loadBenchmarkHistory, deleteBenchmarkRun, parseBenchmarkDocx, parseTicketCSV, saveFineTuningRecord, getSettings } from '../services/mockBackend';
 import { toPersianDigits } from '../services/textProcessor';
 
 interface BenchmarkModalProps {
@@ -14,8 +14,9 @@ interface BenchmarkModalProps {
 
 const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks }) => {
   const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
-  const [datasetMode, setDatasetMode] = useState<'standard' | 'custom'>('standard');
+  const [datasetMode, setDatasetMode] = useState<'standard' | 'custom' | 'ticket'>('standard');
   const [customDataset, setCustomDataset] = useState<BenchmarkCase[]>([]);
+  const [ticketDataset, setTicketDataset] = useState<BenchmarkCase[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<BenchmarkResult[]>([]);
@@ -24,8 +25,9 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<BenchmarkRun | null>(null);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, number>>({}); 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ticketInputRef = useRef<HTMLInputElement>(null);
 
-  const activeDataset = datasetMode === 'standard' ? BENCHMARK_DATASET : customDataset;
+  const activeDataset = datasetMode === 'standard' ? BENCHMARK_DATASET : (datasetMode === 'ticket' ? ticketDataset : customDataset);
   const totalCases = activeDataset.length;
 
   const stats = useMemo(() => {
@@ -81,6 +83,30 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
           } catch (error) {
               console.error(error);
               alert('خطا در پردازش فایل.');
+          }
+      }
+  };
+
+  const handleTicketUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          // Accept csv for now as specified
+          if (!file.name.toLowerCase().endsWith('.csv')) {
+              alert('لطفاً فایل خروجی تیکت‌ها را با فرمت CSV بارگذاری کنید.');
+              return;
+          }
+
+          try {
+              const cases = await parseTicketCSV(file);
+              if (cases.length === 0) {
+                  alert('هیچ تیکت معتبری یافت نشد. لطفاً ساختار فایل (TicketNum, Body) را بررسی کنید.');
+                  return;
+              }
+              setTicketDataset(cases);
+              alert(`${cases.length} تیکت جهت ارزیابی استخراج شد.`);
+          } catch (error: any) {
+              console.error(error);
+              alert(`خطا در پردازش فایل تیکت: ${error.message}`);
           }
       }
   };
@@ -251,7 +277,7 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                             <span className={`text-xs font-bold px-2 py-1 rounded border min-w-[3rem] text-center ${scoreColor}`}>
                                 {toPersianDigits((safeScore * 100).toFixed(0))}٪
                             </span>
-                            <span className="text-sm font-medium text-slate-700 truncate">{res.question}</span>
+                            <span className="text-sm font-medium text-slate-700 truncate">{res.question.split('\n').pop() || res.question}</span>
                         </div>
                         <div className="flex items-center gap-4">
                             {/* Mini RAGAS Indicators */}
@@ -271,12 +297,17 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                     
                     {isExpanded && (
                         <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-4 text-sm animate-in slide-in-from-top-2">
+                            {/* Full Question if it was truncated */}
+                            <div className="bg-slate-100 p-2 rounded text-xs text-slate-700 whitespace-pre-wrap">
+                                <strong>سوال کامل:</strong> {res.question}
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
                                     <h4 className="text-xs font-bold text-emerald-600 mb-2 flex items-center gap-1">
                                         <CheckCircle2 className="w-3 h-3" /> پاسخ مرجع (Ground Truth)
                                     </h4>
-                                    <p className="text-slate-600 leading-6 text-xs text-justify">{res.groundTruth}</p>
+                                    <p className="text-slate-600 leading-6 text-xs text-justify whitespace-pre-wrap">{res.groundTruth}</p>
                                 </div>
                                 <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex flex-col">
                                     <div>
@@ -392,7 +423,7 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-6">
                             
                             {/* Dataset Selection */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                                 <button 
                                     onClick={() => setDatasetMode('standard')}
                                     className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'standard' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
@@ -408,6 +439,14 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                     <FileType className="w-6 h-6" />
                                     <span className="font-bold text-sm">بنچمارک سفارشی</span>
                                     <span className="text-xs opacity-70">آپلود فایل Word سوال و جواب</span>
+                                </button>
+                                <button 
+                                    onClick={() => setDatasetMode('ticket')}
+                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'ticket' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
+                                >
+                                    <Ticket className="w-6 h-6" />
+                                    <span className="font-bold text-sm">بنچمارک تیکت‌ها</span>
+                                    <span className="text-xs opacity-70">آپلود خروجی اکسل (CSV)</span>
                                 </button>
                             </div>
 
@@ -439,12 +478,40 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                 </div>
                             )}
 
+                            {/* Ticket CSV Upload */}
+                            {datasetMode === 'ticket' && (
+                                <div className="mb-6 animate-in fade-in slide-in-from-top-2">
+                                    <input 
+                                        type="file" 
+                                        ref={ticketInputRef}
+                                        onChange={handleTicketUpload}
+                                        accept=".csv"
+                                        className="hidden"
+                                    />
+                                    <button 
+                                        onClick={() => ticketInputRef.current?.click()}
+                                        className="w-full border-2 border-dashed border-slate-300 rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all"
+                                    >
+                                        <MessageSquare className="w-8 h-8" />
+                                        {ticketDataset.length > 0 ? (
+                                            <span className="font-bold text-emerald-600 flex items-center gap-2">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                {toPersianDigits(ticketDataset.length)} تیکت شناسایی شد
+                                            </span>
+                                        ) : (
+                                            <span>کلیک برای آپلود فایل خروجی تیکت (.csv)</span>
+                                        )}
+                                        <span className="text-[10px] opacity-60">ساختار: خروجی استاندارد شامل TicketNum و Body</span>
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="flex justify-center">
                                 <button 
                                     onClick={handleStart}
-                                    disabled={datasetMode === 'custom' && customDataset.length === 0}
+                                    disabled={(datasetMode === 'custom' && customDataset.length === 0) || (datasetMode === 'ticket' && ticketDataset.length === 0)}
                                     className={`bg-indigo-600 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-105 flex items-center gap-2 ${
-                                        datasetMode === 'custom' && customDataset.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700'
+                                        (datasetMode === 'custom' && customDataset.length === 0) || (datasetMode === 'ticket' && ticketDataset.length === 0) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700'
                                     }`}
                                 >
                                     <Play className="w-5 h-5" />

@@ -12,6 +12,19 @@ export const toPersianDigits = (n: number | string | undefined | null): string =
     return n.toString().replace(/\d/g, x => farsiDigits[parseInt(x)]);
 };
 
+export const stripHtml = (html: string): string => {
+   if (!html) return '';
+   return html
+       .replace(/<[^>]*>/g, ' ') // Remove tags
+       .replace(/&nbsp;/g, ' ')  // Remove spaces
+       .replace(/&zwnj;/g, ' ')  // Remove zero-width non-joiners
+       .replace(/&lt;/g, '<')
+       .replace(/&gt;/g, '>')
+       .replace(/&amp;/g, '&')
+       .replace(/\s+/g, ' ')     // Collapse whitespace
+       .trim();
+};
+
 // ==========================================
 // CLEANING PIPELINE
 // ==========================================
@@ -28,8 +41,9 @@ export const cleanAndNormalizeText = (text: string): string => {
     .replace(/ي/g, 'ی')
     .replace(/ك/g, 'ک')
     .replace(/ئ/g, 'ی')
-    // 3. STRICT SANITIZATION: Remove invisible control characters (The cause of NaN errors)
-    .replace(/[\u0000-\u001F\u007F-\u009F\u200B\u200C\u200D\u200E\u200F\u202A-\u202E]/g, ' ') 
+    // 3. STRICT SANITIZATION: Remove invisible control characters but PRESERVE newlines (0A, 0D) and tabs (09)
+    // Range explanation: \u0000-\u0008 (Control), \u000B-\u000C (Vertical Tab/Form Feed), \u000E-\u001F (Control)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\u200D\u200E\u200F\u202A-\u202E]/g, ' ') 
     // 4. Normalize Numbers
     .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728)) 
     // 5. Structure Normalization
@@ -125,6 +139,47 @@ export const classifyDocument = (text: string, filename: string): { category: Do
     return { category: 'general', subCategory: 'uncategorized' };
 };
 
+// Markdown Metadata Parser
+export const parseMarkdownMetadata = (text: string): Partial<ChunkMetadata> => {
+    const meta: Partial<ChunkMetadata> = {};
+    const lines = text.split('\n');
+    
+    // Scan first 50 lines for "Document Control" table
+    for (let i = 0; i < Math.min(lines.length, 50); i++) { 
+        const line = lines[i].trim();
+        // Look for typical headers or table start
+        if ((line.includes('شناسنامه سند') || line.includes('Document Control')) ||
+            (line.startsWith('|') && line.includes('عنوان') && line.includes('نسخه'))) {
+            
+            // Search for table header in proximity
+            let headerIndex = -1;
+            if (line.startsWith('|')) headerIndex = i;
+            else if (i + 1 < lines.length && lines[i+1].trim().startsWith('|')) headerIndex = i + 1;
+
+            if (headerIndex !== -1 && headerIndex + 2 < lines.length) {
+                const headerLine = lines[headerIndex];
+                const sepLine = lines[headerIndex + 1];
+                const dataLine = lines[headerIndex + 2];
+
+                if (sepLine.includes('---')) {
+                    const headers = headerLine.split('|').map(s => s.trim()).filter(s => s);
+                    const values = dataLine.split('|').map(s => s.trim()).filter(s => s);
+                    
+                    headers.forEach((h, idx) => {
+                        const val = values[idx] || '';
+                        if (!val) return;
+                        
+                        if (h.includes('نسخه')) meta.version = val;
+                        if (h.includes('تاریخ')) meta.documentDate = val;
+                    });
+                }
+            }
+            break; // Stop after finding first metadata table
+        }
+    }
+    return meta;
+};
+
 export const extractMetadata = (text: string, filename: string, category: DocCategory, subCategory: string): ChunkMetadata => {
   const metadata: ChunkMetadata = {
     category,
@@ -153,6 +208,11 @@ export const extractMetadata = (text: string, filename: string, category: DocCat
       const symbols = potentialSymbols.filter(w => w.length > 3 && !stopWords.includes(w)).slice(0, 5);
       if (symbols.length > 0) metadata.symbols = symbols;
   }
+
+  // Enrich with Markdown specific metadata
+  const mdMeta = parseMarkdownMetadata(text);
+  if (mdMeta.version) metadata.version = mdMeta.version;
+  if (mdMeta.documentDate) metadata.documentDate = mdMeta.documentDate;
 
   return metadata;
 };
@@ -207,6 +267,56 @@ export const smartChunking = (text: string, targetSize?: number, overlapSize?: n
     }
 
     return chunks.filter(c => c.length > 50);
+};
+
+// New Structure-Aware Markdown Chunker
+export const chunkMarkdown = (text: string, targetSize?: number, overlap?: number): string[] => {
+    const settings = getSettings();
+    const effectiveTarget = targetSize || settings.chunkSize;
+    const effectiveOverlap = overlap || settings.chunkOverlap;
+
+    const chunks: string[] = [];
+    const lines = text.split('\n');
+    
+    let currentSectionContent: string[] = [];
+    let currentHeader = '';
+    
+    const flushSection = () => {
+        if (currentSectionContent.length === 0) return;
+        
+        const fullContent = currentSectionContent.join('\n').trim();
+        if (!fullContent) return;
+
+        // If section is massive, split it using smartChunking, but prefix context (Header)
+        if (fullContent.length > effectiveTarget) {
+            const subChunks = smartChunking(fullContent, effectiveTarget, effectiveOverlap);
+            subChunks.forEach(sc => {
+                chunks.push(currentHeader ? `${currentHeader}\n${sc}` : sc);
+            });
+        } else {
+            chunks.push(currentHeader ? `${currentHeader}\n${fullContent}` : fullContent);
+        }
+    };
+
+    for (const line of lines) {
+        // Detect H1, H2, H3
+        const headerMatch = line.match(/^(#{1,3})\s+(.+)/);
+        if (headerMatch) {
+            flushSection();
+            currentHeader = headerMatch[0]; // Keep the whole header line like "## Title"
+            currentSectionContent = [];
+        } else {
+            currentSectionContent.push(line);
+        }
+    }
+    flushSection(); // Final flush
+
+    // If no headers found, fallback to smartChunking
+    if (chunks.length === 0 && text.trim().length > 0) {
+        return smartChunking(text, effectiveTarget, effectiveOverlap);
+    }
+    
+    return chunks;
 };
 
 export const chunkWhole = (text: string): string[] => {

@@ -1,12 +1,124 @@
 
 import { KnowledgeChunk, BenchmarkCase } from '../types';
-import { cleanAndNormalizeText, classifyDocument, extractMetadata, chunkWhole, chunkQA, smartChunking, classifyTextSegment } from './textProcessor';
+import { cleanAndNormalizeText, classifyDocument, extractMetadata, chunkWhole, chunkQA, smartChunking, chunkMarkdown, classifyTextSegment, stripHtml } from './textProcessor';
 import { getEmbedding } from './ollama';
 import { saveChunksToDB } from './database';
 import { getSettings } from './settings';
 
 // Global definition for the mammoth library
 declare var mammoth: any;
+
+/**
+ * Parses a Ticket Export CSV (based on Excel Image).
+ * Structure: TicketNum | Title | Body | CreateDate ...
+ * Strategy:
+ * 1. Parse CSV (handling quoted newlines)
+ * 2. Group rows by TicketNum
+ * 3. Sort each group by ID or Date
+ * 4. Question = Body of First Row
+ * 5. GroundTruth = Body of Last Row (Resolution)
+ */
+export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
+    const text = await file.text();
+    const rows: string[][] = [];
+    
+    // Robust CSV Parser for Quoted Newlines
+    let inQuote = false;
+    let currentCell = '';
+    let currentRow: string[] = [];
+    
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"') {
+            if (inQuote && nextChar === '"') {
+                currentCell += '"'; // Escaped quote
+                i++;
+            } else {
+                inQuote = !inQuote;
+            }
+        } else if (char === ',' && !inQuote) {
+            currentRow.push(currentCell);
+            currentCell = '';
+        } else if ((char === '\r' || char === '\n') && !inQuote) {
+            if (char === '\r' && nextChar === '\n') i++;
+            currentRow.push(currentCell);
+            rows.push(currentRow);
+            currentRow = [];
+            currentCell = '';
+        } else {
+            currentCell += char;
+        }
+    }
+    if (currentCell || currentRow.length > 0) {
+        currentRow.push(currentCell);
+        rows.push(currentRow);
+    }
+
+    if (rows.length < 2) throw new Error("File appears empty or invalid");
+
+    // Header Mapping
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const ticketIdx = headers.findIndex(h => h.includes('ticketnum'));
+    const bodyIdx = headers.findIndex(h => h.includes('body'));
+    const titleIdx = headers.findIndex(h => h.includes('title'));
+    
+    if (ticketIdx === -1 || bodyIdx === -1) {
+        throw new Error("CSV must contain 'TicketNum' and 'Body' columns.");
+    }
+
+    // Grouping
+    const ticketGroups = new Map<string, { body: string, title: string }[]>();
+
+    // Skip header
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length <= ticketIdx) continue;
+
+        const ticketNum = row[ticketIdx]?.trim();
+        let body = row[bodyIdx] || "";
+        const title = titleIdx !== -1 ? row[titleIdx] || "" : "";
+
+        if (!ticketNum) continue;
+
+        // Clean HTML from body
+        body = stripHtml(body);
+        
+        if (!body || body.length < 5) continue;
+
+        if (!ticketGroups.has(ticketNum)) {
+            ticketGroups.set(ticketNum, []);
+        }
+        ticketGroups.get(ticketNum)!.push({ body, title });
+    }
+
+    const cases: BenchmarkCase[] = [];
+
+    ticketGroups.forEach((entries, ticketNum) => {
+        if (entries.length < 2) return; // Need at least Question + Answer
+
+        // Assuming file order is chronological or reverse chronological.
+        // We need heuristic. Usually ticket exports are ordered.
+        // Let's assume input order is [First Message ... Last Message]
+        // If the first message contains "با سلام" (Greetings), it's likely the question.
+        
+        const questionObj = entries[0];
+        const answerObj = entries[entries.length - 1];
+
+        // Sanity Check: If question matches answer (single row duplicated), skip
+        if (questionObj.body === answerObj.body) return;
+
+        cases.push({
+            id: `ticket-${ticketNum}`,
+            category: 'Ticket Analysis',
+            question: `${questionObj.title ? `عنوان: ${questionObj.title}\n` : ''}متن تیکت: ${questionObj.body}`,
+            groundTruth: answerObj.body
+        });
+    });
+
+    return cases;
+};
 
 /**
  * Parses a DOCX file specifically to extract Benchmark Cases from a table.
@@ -140,7 +252,10 @@ export const parseFiles = async (
       
       // PARENT-CHILD INDEXING STRATEGY using Configurable Settings
       let parentChunks: string[] = [];
-      if (initialClass.category === 'troubleshooting') {
+      if (fileName.toLowerCase().endsWith('.md')) {
+          if (onProgress) onProgress(file.name, 'reading', 'Applying Markdown Structure Analysis...');
+          parentChunks = chunkMarkdown(cleanedText, settings.chunkSize, settings.chunkOverlap);
+      } else if (initialClass.category === 'troubleshooting') {
           parentChunks = chunkWhole(cleanedText);
       } else if (cleanedText.includes('سوال :')) {
           parentChunks = chunkQA(cleanedText);
