@@ -3,16 +3,18 @@ import { KnowledgeChunk, Source, DebugInfo, QueryResult, PipelineData, Message }
 import { getEmbedding } from './ollama';
 import { getSettings } from './settings';
 import { PERSIAN_SYNONYMS } from './synonymsData';
+import { cleanAndNormalizeText } from './textProcessor'; // Reuse logic
 
+// REMOVED 'روش', 'نحوه', 'مراحل', 'چطور' from stop words to fix the "How to" retrieval issue
 const PERSIAN_STOP_WORDS = new Set([
     'از', 'به', 'با', 'برای', 'در', 'هم', 'و', 'که', 'را', 'این', 'آن', 'است', 'هست', 'بود', 'شد', 'می', 'نمی', 
     'یک', 'تا', 'بر', 'یا', 'نیز', 'باید', 'شاید', 'اما', 'اگر', 'چرا', 'چه', 'روی', 'زیر', 'های', 'ها', 'تر', 'ترین',
     'کند', 'کنند', 'کرده', 'داشت', 'دارد', 'شود', 'میشود', 'نشود', 'باعث', 'مورد', 'جهت', 'توسط', 'بنابراین', 'سپس',
     'ولی', 'لیکن', 'چون', 'چنانچه', 'آیا', 'بله', 'خیر', 'لطفا', 'ممنون', 'متشکرم', 'بی‌زحمت', 'سلام', 'خسته', 'نباشید',
-    'روش', 'نحوه', 'چگونه', 'چطور', 'چطوره', 'چیست', 'کی', 'کجا', 'کدام', 
-    'توضیح', 'بده', 'بگو', 'چی', 'هستش', 'طریقه', 'مراحل', 'انجام',
+    'چیست', 'کی', 'کجا', 'کدام', 
+    'توضیح', 'بده', 'بگو', 'چی', 'هستش', 'انجام',
     'رو', 'میشه', 'لطفاً', 'تفاوتش', 'فرقش', 'چیه', 'کدومه', 'بگید', 'بفرمایید',
-    'فرق', 'تفاوت', 'مقایسه', 'مزیت', 'معایب', 'بیزحمت'
+    'بیزحمت'
 ]);
 
 const DOMAIN_KEYWORDS = new Set([
@@ -24,17 +26,13 @@ const DOMAIN_KEYWORDS = new Set([
     'ستون', 'فیلد', 'پارامتر', 'فیلتر', 'خروجی', 'اکسل', 'چاپ', 'نمودار',
     'ایمیل', 'ارسال', 'nav', 'etf', 'prx', 'dps', 'ip', 'تغییر',
     'شعبه', 'باجه', 'کارگزار', 'سرخط', 'سرخطی', 'حراج', 'فریز', 'page', 'offset', 'api',
-    'نمایندگی', 'دسترسی', 'مجوز'
+    'نمایندگی', 'دسترسی', 'مجوز', 'روش', 'نحوه', 'مراحل', 't+1', 't+2'
 ]);
 
 const normalizeForSearch = (text: string): string => {
-    return text.toLowerCase()
-        .replace(/ي/g, 'ی')
-        .replace(/ك/g, 'ک')
-        .replace(/\u200C/g, ' ') 
-        .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728)) 
-        .replace(/[،؛:!?.()\[\]{}""''\-]/g, ' ')
-        .trim();
+    // Reuse the exact same normalization logic as ingestion to ensure "T+1" matches "T+1"
+    // even if input was "(T+1)"
+    return cleanAndNormalizeText(text);
 };
 
 /**
@@ -104,13 +102,13 @@ const optimizeQueryAI = async (rawQuery: string): Promise<string> => {
     const prompt = `
 تو یک موتور جستجوی هوشمند برای سیستم مالی هستی. وظیفه تو استخراج "هسته معنایی" (Semantic Core) از سوال کاربر است.
 قوانین:
-1. تمام کلمات محاوره‌ای، تعارفات، افعال دستوری و نویزهای زبانی (مثل: لطفا، بگو، چیست، رو، برام، ممنون، بی زحمت) را حذف کن.
-2. اگر کاربر دنبال مقایسه است (فرق، تفاوت، چه فرقی دارد)، حتماً کلمات "تفاوت" و "تعریف" را به عنوان کلمه کلیدی نگه دار.
-3. اگر سوال درباره آدرس منو یا گزارش است، کلمات "مسیر" و "منو" را اضافه کن.
-4. خروجی فقط و فقط باید کلمات کلیدی نهایی باشد که با فاصله از هم جدا شده‌اند. هیچ توضیح اضافه‌ای نده.
+1. کلمات محاوره‌ای و تعارفات (لطفا، ممنون، بی زحمت، سلام) را حذف کن.
+2. **خیلی مهم:** کلمات کلیدی سوال مثل "روش"، "نحوه"، "تفاوت"، "مراحل" را **هرگز** حذف نکن. این کلمات هدف کاربر را نشان می‌دهند.
+3. اگر کاربر دنبال مقایسه است (فرق، تفاوت)، حتماً کلمات "تفاوت" و "تعریف" را نگه دار.
+4. خروجی فقط و فقط باید کلمات کلیدی نهایی باشد که با فاصله از هم جدا شده‌اند.
 
-مثال ورودی: "بی زحمت میشه بگی فرق شعبه و باجه در سیستم چیه؟"
-مثال خروجی: تفاوت تعریف شعبه باجه سیستم
+مثال ورودی: "بی زحمت میشه بگی روش تغییر کارگزار ناظر چیه؟"
+مثال خروجی: روش تغییر کارگزار ناظر
 
 ورودی کاربر: "${rawQuery}"
 خروجی بهینه شده:
@@ -143,9 +141,16 @@ export const extractCriticalTerms = (query: string): string[] => {
     const numbers = normalizedQuery.match(/\d{3,}/g);
     if (numbers) terms.push(...numbers);
 
-    const englishWords = normalizedQuery.match(/[a-zA-Z0-9\+\-]{2,}/g);
+    // Enhanced regex to catch T+1, T-2, C++ style terms properly
+    const englishWords = normalizedQuery.match(/[a-zA-Z0-9]+[\+\-]?[0-9]+/g);
     if (englishWords) {
-        terms.push(...englishWords.filter(w => w.length > 3 || ['api', 'nav', 'etf', 'ip'].includes(w)));
+        terms.push(...englishWords);
+    }
+    
+    // Catch standard english words
+    const standardEnglish = normalizedQuery.match(/[a-zA-Z]{3,}/g);
+    if (standardEnglish) {
+        terms.push(...standardEnglish);
     }
 
     const tokens = normalizedQuery.split(/\s+/);
@@ -200,7 +205,6 @@ export const processQuery = async (
       if (onStatusUpdate) onStatusUpdate({ step: 'analyzing', processingTime: 0 });
       
       // Step 1: Contextualize Query (Handle Follow-ups)
-      // Instead of just optimizing, we now "Rewrite with History"
       let optimizedSearchQuery = query;
       let strategyLabel = 'AI-Optimized RAG';
 
@@ -212,6 +216,18 @@ export const processQuery = async (
       } else {
           optimizedSearchQuery = await optimizeQueryAI(query);
       }
+
+      // --- PROCEDURAL INTENT INJECTION (The "Fix" for incomplete answers) ---
+      // If the user asks "How to" or "Method", we explicitly inject navigation keywords.
+      // This forces the vector search to prefer chunks that talk about menus and paths.
+      const proceduralKeywords = ['روش', 'نحوه', 'چطور', 'چگونه', 'مراحل', 'طریقه', 'آموزش'];
+      const isProcedural = proceduralKeywords.some(k => optimizedSearchQuery.includes(k));
+      
+      if (isProcedural) {
+          optimizedSearchQuery += ' "مسیر" "منو" "دکمه" "گزینه" "ثبت"';
+          strategyLabel += ' + Procedural Boost';
+      }
+      // --------------------------------------------------------------------
 
       const criticalTerms = extractCriticalTerms(optimizedSearchQuery);
       
@@ -303,8 +319,9 @@ ${contextText}
 
 دستورالعمل: 
 ۱. پاسخ دقیق را بر اساس "مستندات مرجع" بنویس. 
-۲. اگر سوال به بحث قبلی ارجاع دارد (مثلا "راه حلش چیست؟")، از "تاریخچه مکالمه" برای درک موضوع استفاده کن اما پاسخ نهایی باید از "مستندات مرجع" استخراج شود.
-۳. اگر در مستندات پاسخی نبود، صریح بگو.
+۲. اگر کاربر دنبال "روش" یا "مراحل" انجام کاری است (مثل تغییر کارگزار)، حتماً به دنبال کلماتی مثل "منو"، "مسیر"، "دکمه" در متن باش و مراحل را قدم به قدم بنویس.
+۳. اگر مراحل دقیق در متن نیست، اما مفهوم مرتبطی وجود دارد (مثلاً "تخصیص" بجای "تغییر ناظر")، آن را توضیح بده و بگو که احتمالاً منظور همین است.
+۴. **مهم:** پاسخ باید تماماً به زبان فارسی باشد. از نوشتن مقدمه به زبان‌های دیگر (انگلیسی، چینی و...) خودداری کن.
 
 پاسخ به زبان فارسی:`;
 
@@ -324,7 +341,30 @@ ${contextText}
 
       if (!response.ok) throw new Error("Ollama Failed");
       const data = await response.json();
-      const generatedText = data.message?.content || "";
+      let generatedText = data.message?.content || "";
+
+      // --- CLEAN UP MULTILINGUAL ARTIFACTS ---
+      // Fix: Updated regex to include Hiragana (\u3040-\u309F) and Katakana (\u30A0-\u30FF)
+      generatedText = generatedText.replace(/^[\s\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef\u3040-\u309f\u30a0-\u30ff]+/, '');
+      generatedText = generatedText.replace(/^(Here is the answer|Based on the provided|According to)[^:\n]*[:]?\s*/i, '');
+
+      // Sanity Check: Ensure response is in Persian
+      const hasPersian = /[\u0600-\u06FF]/.test(generatedText);
+      const isJapaneseRefusal = /[\u3040-\u309f\u30a0-\u30ff]/.test(generatedText);
+
+      if (!hasPersian && isJapaneseRefusal) {
+         return { 
+             text: "متاسفانه مدل هوش مصنوعی پاسخ معتبری تولید نکرد (خطای زبان). لطفاً دوباره تلاش کنید یا مدل چت را تغییر دهید.",
+             sources: validDocs.map(d => ({ ...d.chunk.source, score: d.score })),
+             debugInfo: {
+                strategy: 'Fallback (Language Error)',
+                processingTimeMs: Date.now() - startTime,
+                candidateCount: validDocs.length,
+                logicStep: 'Detected invalid Japanese response',
+                extractedKeywords: criticalTerms
+             }
+         };
+      }
 
       return { 
           text: generatedText.trim(), 

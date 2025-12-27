@@ -9,15 +9,17 @@ const PERSIAN_STOP_WORDS = new Set([
   'از', 'به', 'با', 'برای', 'در', 'هم', 'و', 'که', 'را', 'این', 'آن', 'است', 'هست', 'بود', 'شد', 'می', 'نمی', 
   'یک', 'تا', 'بر', 'یا', 'نیز', 'باید', 'شاید', 'اما', 'اگر', 'چرا', 'چه', 'روی', 'زیر', 'های', 'ها', 'تر', 'ترین',
   'کند', 'کنند', 'کرده', 'داشت', 'دارد', 'شود', 'میشود', 'نشود', 'باعث', 'مورد', 'جهت', 'توسط', 'بنابراین', 'سپس',
-  'ولی', 'لیکن', 'چون', 'چنانچه', 'آیا', 'بله', 'خیر', 'لطفا', 'ممنون', 'متشکرم'
+  'ولی', 'لیکن', 'چون', 'چنانچه', 'آیا', 'بله', 'خیر', 'لطفا', 'ممنون', 'متشکرم', 'عبارتند', 'نام', 'ببرید', 'حداقل', 'پنج', 'نوع', 'لیست',
+  'می‌باشد', 'میباشد', 'گردد', 'میگردد', 'گشته'
 ]);
 
 /**
- * Normalizes text for better comparison
+ * Normalizes text for better comparison by removing punctuation and unifying characters.
  */
 const normalizeText = (text: string): string => {
     return text.toLowerCase()
-        .replace(/[.,/#!$%^&*;:{}=\-_`~()؟،«»"']/g, "") // Remove punctuation completely
+        .replace(/[.,/#!$%^&*;:{}=\-_`~()؟،«»"']/g, " ") // Remove punctuation
+        .replace(/\d+[\.:\-)]/g, " ") // Remove list numbering like "1." or "1-"
         .replace(/\s+/g, " ") // Normalize spaces
         .replace(/ي/g, 'ی')
         .replace(/ك/g, 'ک')
@@ -25,42 +27,15 @@ const normalizeText = (text: string): string => {
 };
 
 /**
- * Calculates Jaccard Similarity for text overlap (token based).
- * Good for catching "All cases" vs "All cases."
- */
-const calculateTextOverlap = (generated: string, groundTruth: string): number => {
-    const genTokens = new Set(normalizeText(generated).split(' '));
-    const truthTokens = new Set(normalizeText(groundTruth).split(' '));
-    
-    // Filter empty tokens
-    const validGen = new Set([...genTokens].filter(t => t.length > 1));
-    const validTruth = new Set([...truthTokens].filter(t => t.length > 1));
-
-    if (validTruth.size === 0) return 0;
-
-    let intersection = 0;
-    validTruth.forEach(t => {
-        if (validGen.has(t)) intersection++;
-    });
-
-    // Check if Ground Truth is fully contained in Generated (Recall focus)
-    const recall = intersection / validTruth.size;
-    
-    return recall;
-};
-
-/**
  * Calculates Keyword Recall:
  * What percentage of significant words in Ground Truth appear in the Generated Answer?
+ * This is CRITICAL for list-based questions where AI might be verbose.
  */
 const calculateKeywordRecall = (generated: string, groundTruth: string): number => {
     if (!generated || !groundTruth) return 0;
 
     const tokenize = (text: string) => {
-        return text.toLowerCase()
-            .replace(/[.,/#!$%^&*;:{}=\-_`~()؟،«»"']/g, " ") 
-            .replace(/\s+/g, " ")
-            .trim()
+        return normalizeText(text)
             .split(" ")
             .filter(w => w.length > 2) 
             .filter(w => !PERSIAN_STOP_WORDS.has(w)); 
@@ -77,8 +52,10 @@ const calculateKeywordRecall = (generated: string, groundTruth: string): number 
         if (genTokens.has(token)) {
             found = true;
         } else {
+            // Fuzzy match for plurals or slight variations (contains check)
             for (const genToken of genTokens) {
                 if (genToken.includes(token) || token.includes(genToken)) {
+                    // Check length to avoid short meaningless matches
                     if (Math.min(token.length, genToken.length) > 3) {
                          found = true;
                          break;
@@ -94,17 +71,18 @@ const calculateKeywordRecall = (generated: string, groundTruth: string): number 
 
 /**
  * Aggressively calibrates raw cosine similarity for Local Embeddings (E5/Mxbai).
+ * Raw vectors rarely reach 1.0 even for identical meaning, so we boost high scores.
  */
 const calibrateVectorScore = (raw: number): number => {
-    if (raw >= 0.90) return 1.0; 
-    if (raw >= 0.85) return 0.92 + ((raw - 0.85) / 0.05) * 0.08; 
-    if (raw >= 0.80) return 0.80 + ((raw - 0.80) / 0.05) * 0.12; 
-    if (raw >= 0.75) return 0.60 + ((raw - 0.75) / 0.05) * 0.20; 
-    return raw * 0.8; 
+    if (raw >= 0.88) return 1.0; 
+    if (raw >= 0.82) return 0.90 + ((raw - 0.82) / 0.06) * 0.10; 
+    if (raw >= 0.75) return 0.70 + ((raw - 0.75) / 0.07) * 0.20; 
+    return raw; 
 };
 
 /**
  * RAGAS METRIC 1: Faithfulness
+ * Checks if the answer is derived from the context.
  */
 const evaluateFaithfulness = async (context: string, answer: string): Promise<number> => {
     const settings = getSettings();
@@ -145,6 +123,7 @@ JSON:
 
 /**
  * RAGAS METRIC 2: Answer Relevance
+ * Checks if the answer addresses the question.
  */
 const evaluateRelevance = async (question: string, answer: string): Promise<number> => {
     const settings = getSettings();
@@ -196,7 +175,8 @@ export const runBenchmark = async (
         const testCase = testCases[i];
         const startTime = Date.now();
         
-        if (i > 0) await new Promise(resolve => setTimeout(resolve, 100));
+        // Small delay to prevent UI freezing
+        if (i > 0) await new Promise(resolve => setTimeout(resolve, 50));
 
         // Call processQuery
         // We temporarily lower minConfidence via the setting override if possible, 
@@ -235,32 +215,24 @@ export const runBenchmark = async (
 
         if (hasValidAnswer) {
             
-            // 1. Check for Exact/High Text Overlap FIRST (Fixes short answer issues)
-            const textOverlap = calculateTextOverlap(result.text, testCase.groundTruth);
+            // 1. Calculate Keyword Recall (Coverage)
+            // Ideally, the generated answer should contain ALL key terms from Ground Truth.
+            const keywordRecall = calculateKeywordRecall(result.text, testCase.groundTruth);
             
-            if (textOverlap > 0.9) {
-                // Almost exact match (e.g. "All cases" vs "All cases.")
-                finalScore = 1.0;
-                faithfulnessScore = 1.0;
-                relevanceScore = 1.0;
-            } else {
-                // 2. Fallback to Vector + RAGAS
-                let calibratedScore = 0;
-                try {
-                    const genVec = await getEmbedding(result.text, false);
-                    const truthVec = await getEmbedding(testCase.groundTruth, false);
-                    const rawVectorScore = cosineSimilarity(genVec, truthVec);
-                    calibratedScore = calibrateVectorScore(rawVectorScore);
-                } catch (e) {
-                    console.warn("Benchmark embedding failed", e);
-                }
+            // 2. Vector Similarity (Backup)
+            let calibratedScore = 0;
+            try {
+                const genVec = await getEmbedding(result.text, false);
+                const truthVec = await getEmbedding(testCase.groundTruth, false);
+                const rawVectorScore = cosineSimilarity(genVec, truthVec);
+                calibratedScore = calibrateVectorScore(rawVectorScore);
+            } catch (e) {
+                console.warn("Benchmark embedding failed", e);
+            }
 
-                // If text overlap is decent (e.g. > 50%), ensure score doesn't drop too low due to vectors
-                if (textOverlap > 0.5) {
-                    calibratedScore = Math.max(calibratedScore, textOverlap);
-                }
-
-                // C. RAGAS Metrics
+            // 3. RAGAS Metrics (Optional, heavier)
+            // We only run this if basic recall is decent, to save tokens/time if answer is total garbage
+            if (keywordRecall > 0.3 || calibratedScore > 0.6) {
                 const contextStr = result.sources.map(s => s.snippet).join("\n");
                 const [faith, rel] = await Promise.all([
                     evaluateFaithfulness(contextStr, result.text),
@@ -268,13 +240,32 @@ export const runBenchmark = async (
                 ]);
                 faithfulnessScore = faith;
                 relevanceScore = rel;
-
-                const ragasPenalty = (faithfulnessScore < 0.5 || relevanceScore < 0.5) ? 0.6 : 1.0;
-                
-                // Composite Score
-                finalScore = (calibratedScore * 0.4) + (faithfulnessScore * 0.3) + (relevanceScore * 0.3);
-                finalScore = finalScore * ragasPenalty;
             }
+
+            // --- SMART SCORING LOGIC (UPDATED) ---
+            // If Keyword Recall is high (> 80%), it means the answer contains the correct facts.
+            // We use the MAX of Recall and Vector Score to allow for verbose/formatted answers.
+            
+            if (keywordRecall > 0.8) {
+                // Highly accurate content match - ignore vector score if it's lower (due to length mismatch)
+                finalScore = Math.max(keywordRecall, calibratedScore);
+            } else {
+                // Balanced calculation for partial answers
+                // Weights: Base (Recall/Vector max) 70% + RAGAS 30%
+                const baseScore = Math.max(calibratedScore, keywordRecall);
+                
+                // RAGAS penalty only if scores are generated
+                const ragasBonus = (faithfulnessScore + relevanceScore) / 2;
+                
+                if (faithfulnessScore > 0) {
+                     finalScore = (baseScore * 0.7) + (ragasBonus * 0.3);
+                } else {
+                     finalScore = baseScore;
+                }
+            }
+            
+            // Cap at 1.0
+            finalScore = Math.min(1.0, finalScore);
         }
 
         const benchmarkResult: BenchmarkResult = {

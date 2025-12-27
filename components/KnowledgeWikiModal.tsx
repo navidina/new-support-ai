@@ -28,14 +28,27 @@ const subCategoryLabels: Record<string, string> = {
     'accounting': 'امور مالی و حسابداری',
     'treasury': 'خزانه‌داری',
     'securities_ops': 'عملیات اوراق',
+    'general_backoffice': 'بک‌آفیس عمومی',
     'exir': 'سامانه معاملاتی اکسیر',
     'recsar': 'سامانه معاملاتی رکسار',
     'rayan_mobile': 'رایان همراه',
     'pwa': 'نسخه وب‌اپلیکیشن',
     'fund_ops': 'صدور و ابطال',
-    'financial_reconciliation': 'رفع مغایرت‌های مالی',
+    'market_making': 'بازارگردانی',
+    'fund_api': 'API صندوق',
+    'general_funds': 'صندوق عمومی',
+    'commodity': 'بورس کالا',
+    'energy': 'بورس انرژی',
+    'futures': 'آتی',
+    'financial_reconciliation': 'مغایرت مالی',
     'trading_issues': 'خطاهای سفارش‌گذاری',
     'access_issues': 'مشکلات دسترسی',
+    'general_ticket': 'تیکت‌های عمومی',
+    'ipo': 'عرضه اولیه',
+    'clearing': 'تسویه و پایاپای',
+    'payment_gateways': 'درگاه پرداخت',
+    'web_service': 'وب‌سرویس',
+    'network_security': 'شبکه/امنیت',
     'uncategorized': 'سایر مستندات'
 };
 
@@ -57,7 +70,7 @@ type WikiCategory = {
 
 const RichDocumentRenderer: React.FC<{ content: string }> = ({ content }) => {
     const renderInline = (text: string) => {
-        const parts = text.split(/(\*\*.*?\*\*|`.*?`|\[SourceID:.*?\])/g);
+        const parts = text.split(/(\*\*.*?\*\*|`.*?`|\[SourceID:.*?\]|\[.*?\])/g);
         return parts.map((part, index) => {
             if (part.startsWith('**') && part.endsWith('**')) {
                 return <strong key={index} className="font-bold text-slate-900">{part.slice(2, -2)}</strong>;
@@ -66,8 +79,8 @@ const RichDocumentRenderer: React.FC<{ content: string }> = ({ content }) => {
                 return <code key={index} className="bg-slate-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono border border-slate-200 mx-1">{part.slice(1, -1)}</code>;
             }
             // Citation Highlighting
-            if (part.startsWith('[SourceID:') && part.endsWith(']')) {
-                return <sup key={index} className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded ml-1 cursor-help" title={part}>{part.replace('SourceID:', 'Ref:')}</sup>;
+            if ((part.startsWith('[SourceID:') || part.startsWith('[')) && part.endsWith(']') && !part.includes('](')) {
+                return <sup key={index} className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded ml-1 cursor-help font-mono" title={part}>{part.replace('SourceID:', 'Ref:')}</sup>;
             }
             return part;
         });
@@ -108,19 +121,18 @@ const RichDocumentRenderer: React.FC<{ content: string }> = ({ content }) => {
                         </div>
                     );
                 }
-                // Detect Metadata Table (Starts with | and typically contains 'شناسنامه' or specific headers)
+                // Detect Metadata Table
                 if (trimBlock.startsWith('|')) {
                     const rows = trimBlock.split('\n').filter(r => r.trim().startsWith('|'));
                     if (rows.length < 2) return <p key={i}>{renderInline(trimBlock)}</p>;
                     const headers = rows[0].split('|').filter(c => c.trim()).map(c => c.trim());
                     const dataRows = rows.slice(2).map(r => r.split('|').filter(c => c.trim()).map(c => c.trim()));
                     
-                    // Special styling for Metadata tables (usually 2 columns)
-                    const isMetadata = headers.some(h => h.includes('ویژگی') || h.includes('مقدار') || h.includes('آیتم'));
+                    const isMetadata = headers.some(h => h.includes('ویژگی') || h.includes('مقدار') || h.includes('عنوان') || h.includes('شناسنامه'));
 
                     return (
                         <div key={i} className={`my-6 overflow-hidden rounded-xl border border-slate-200 shadow-sm ${isMetadata ? 'max-w-lg mx-auto' : 'w-full'}`}>
-                            {isMetadata && <div className="bg-slate-100 px-4 py-2 text-xs font-bold text-slate-500 border-b border-slate-200 text-center">شناسنامه سند</div>}
+                            {isMetadata && <div className="bg-slate-100 px-4 py-2 text-xs font-bold text-slate-500 border-b border-slate-200 text-center">جدول اطلاعات</div>}
                             <table className="w-full text-sm text-right">
                                 <thead className={`${isMetadata ? 'hidden' : 'bg-slate-50 text-slate-700'}`}>
                                     <tr>
@@ -211,6 +223,7 @@ const KnowledgeWikiModal: React.FC<KnowledgeWikiModalProps> = ({ isOpen, onClose
           cat.topics.forEach(topic => {
               const sources = new Set(topic.chunks.map(c => c.source.id));
               topic.sourceCount = sources.size;
+              // Pre-sort for raw view (Alphabetical -> Page)
               topic.chunks.sort((a, b) => {
                   if (a.source.id !== b.source.id) return a.source.id.localeCompare(b.source.id);
                   return (a.source.page || 0) - (b.source.page || 0);
@@ -250,10 +263,9 @@ const KnowledgeWikiModal: React.FC<KnowledgeWikiModalProps> = ({ isOpen, onClose
   const handleGenerateDoc = async () => {
       if (!activeTopic || isGenerating) return;
       setIsGenerating(true);
-      setGenerationProgress({ current: 0, total: 0, phase: 'شروع' });
+      setGenerationProgress({ current: 0, total: 100, phase: 'آماده‌سازی داده‌ها...' });
       
       try {
-          // IMPORTANT: Pass the full chunks array, not just text, so we have source info
           const generatedDoc = await generateSynthesizedDocument(
               activeTopic.title, 
               activeTopic.chunks, 

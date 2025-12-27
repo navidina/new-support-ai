@@ -41,12 +41,16 @@ export const cleanAndNormalizeText = (text: string): string => {
     .replace(/ي/g, 'ی')
     .replace(/ك/g, 'ک')
     .replace(/ئ/g, 'ی')
-    // 3. STRICT SANITIZATION: Remove invisible control characters but PRESERVE newlines (0A, 0D) and tabs (09)
-    // Range explanation: \u0000-\u0008 (Control), \u000B-\u000C (Vertical Tab/Form Feed), \u000E-\u001F (Control)
+    // 3. STRICT SANITIZATION
+    // Remove invisible control chars but PRESERVE newlines
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\u200D\u200E\u200F\u202A-\u202E]/g, ' ') 
     // 4. Normalize Numbers
     .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728)) 
-    // 5. Structure Normalization
+    // 5. Intelligent Punctuation Removal
+    // We replace parentheses, brackets, and quotes with SPACE to separate words attached to them.
+    // IMPORTANT: We DO NOT remove '+' or '-' to preserve terms like "T+1", "T-2"
+    .replace(/[.,/#!$%^&*;:{}=_`~()؟،«»"'<>\[\]|]/g, " ")
+    // 6. Structure Normalization
     .replace(/\r\n/g, '\n')
     .replace(/(\d+)[-.)]\s*/g, '\n$1. ') 
     .replace(/\n\s*\n/g, '\n\n')
