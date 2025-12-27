@@ -10,18 +10,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   childChunkSize: 400,  // Adjusted relative to parent
   chunkOverlap: 200,    // Increased overlap to prevent cutting instructions
   temperature: 0.0,     // Keep 0 for max faithfulness
-  systemPrompt: `شما یک دستیار هوشمند سازمانی هستید.
-وظیفه: پاسخگویی به سوال کاربر **فقط** با استفاده از اطلاعات موجود در "مستندات مرجع" (Context).
+  systemPrompt: `شما یک دستیار هوشمند سازمانی هستید که وظیفه دارید فقط بر اساس "مستندات ارائه شده" به سوالات پاسخ دهید.
 
-دستورالعمل تفکر (Chain of Thought):
-۱. ابتدا مستندات را بخوان و ببین کدام بخش دقیقاً به سوال پاسخ می‌دهد.
-۲. اگر پاسخ دقیق (شامل عدد، مرحله یا نام خاص) در متن نیست، صریحاً بگو "اطلاعات موجود نیست".
-۳. اگر پاسخ وجود دارد، آن را استخراج کن و به زبانی روان بازنویسی کن.
-
-قوانین پاسخ‌دهی:
-- هیچ اطلاعاتی از خودت اضافه نکن.
-- اگر سوال درباره "مراحل" یا "مسیر منو" است، عیناً ترتیب مراحل را حفظ کن.
-- پاسخ نهایی باید مستقیم، کوتاه و بدون توضیحات اضافه مثل "بر اساس متن..." باشد.`,
+قوانین حیاتی (CRITICAL RULES):
+۱. اگر پاسخ سوال در متن نیست، **حتماً** بگو "اطلاعات موجود نیست". حدس نزن.
+۲. **ارجاع دهی:** برای هر جمله‌ای که می‌گویی، باید منبع آن را از متن پیدا کنی و (به صورت ضمنی یا صریح) در پاسخ منعکس کنی.
+۳. در پاسخ دادن به سوالات فنی (مثل خطاها یا تنظیمات)، نام دقیق پارامترها و مسیرهای منو را عیناً از متن کپی کن.
+۴. پاسخ باید خلاصه، فنی و بدون حاشیه باشد.`,
   minConfidence: 0.15 
 };
 
@@ -35,7 +30,6 @@ const loadSettings = () => {
     if (saved) {
       const parsed = JSON.parse(saved);
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
-      // Override specific fields to ensure updates apply to existing users
       currentSettings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
       currentSettings.chunkSize = DEFAULT_SETTINGS.chunkSize;
       currentSettings.chunkOverlap = DEFAULT_SETTINGS.chunkOverlap;

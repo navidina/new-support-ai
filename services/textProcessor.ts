@@ -15,19 +15,19 @@ export const toPersianDigits = (n: number | string | undefined | null): string =
 export const stripHtml = (html: string): string => {
    if (!html) return '';
    return html
-       .replace(/<[^>]*>/g, ' ') // Remove tags
-       .replace(/&nbsp;/g, ' ')  // Remove spaces
-       .replace(/&zwnj;/g, ' ')  // Remove zero-width non-joiners
+       .replace(/<[^>]*>/g, '') // Remove tags
+       .replace(/&nbsp;/g, ' ')
+       .replace(/&zwnj;/g, '‌')
        .replace(/&lt;/g, '<')
        .replace(/&gt;/g, '>')
        .replace(/&amp;/g, '&')
-       .replace(/\s+/g, ' ')     // Collapse whitespace
+       .replace(/[ \t]+/g, ' ') // Collapse horizontal whitespace only
        .trim();
 };
 
 /**
- * Simple HTML to Markdown converter to preserve Tables from Docx
- * This is crucial for API documentation and settings lists.
+ * Robust HTML to Markdown converter.
+ * Crucial Fix: Preserves newlines and structure so chunking works correctly.
  */
 export const htmlToMarkdown = (html: string): string => {
     if (!html) return '';
@@ -35,15 +35,17 @@ export const htmlToMarkdown = (html: string): string => {
     let text = html;
 
     // 1. Handle Tables: Convert <tr><td> content </td></tr> to | content |
+    // We do this before stripping tags to preserve table structure
     text = text.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, tableContent) => {
-        let mdTable = '\n';
+        let mdTable = '\n\n'; 
         const rows = tableContent.match(/<tr[^>]*>(.*?)<\/tr>/gs);
         if (rows) {
             rows.forEach((row: string, index: number) => {
                 const cells = row.match(/<td[^>]*>(.*?)<\/td>/gs);
                 if (cells) {
                     const rowContent = cells.map((cell: string) => {
-                        return stripHtml(cell).trim();
+                        // Strip tags inside cell but keep text
+                        return cell.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
                     }).join(' | ');
                     mdTable += `| ${rowContent} |\n`;
                     
@@ -55,22 +57,34 @@ export const htmlToMarkdown = (html: string): string => {
                 }
             });
         }
-        return mdTable + '\n';
+        return mdTable + '\n\n';
     });
 
-    // 2. Handle Lists
-    text = text.replace(/<li[^>]*>(.*?)<\/li>/gs, '- $1\n');
-    
-    // 3. Handle Headers
-    text = text.replace(/<h1[^>]*>(.*?)<\/h1>/gs, '# $1\n');
-    text = text.replace(/<h2[^>]*>(.*?)<\/h2>/gs, '## $1\n');
-    text = text.replace(/<h3[^>]*>(.*?)<\/h3>/gs, '### $1\n');
-    
-    // 4. Handle Paragraphs
-    text = text.replace(/<p[^>]*>(.*?)<\/p>/gs, '$1\n\n');
+    // 2. Structural Conversion
+    text = text.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n\n# $1\n\n'); // Headers
+    text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, '\n- $1'); // List items
+    text = text.replace(/<br\s*\/?>/gi, '\n'); // Line breaks
+    text = text.replace(/<p[^>]*>/gi, '\n\n'); // Start of paragraph
+    text = text.replace(/<\/p>/gi, '\n\n'); // End of paragraph
+    text = text.replace(/<\/div>/gi, '\n'); 
 
-    // 5. Final cleanup
-    return stripHtml(text);
+    // 3. Clean up remaining tags
+    text = text.replace(/<[^>]+>/g, ' '); 
+
+    // 4. Decode entities
+    text = text.replace(/&nbsp;/g, ' ')
+               .replace(/&amp;/g, '&')
+               .replace(/&lt;/g, '<')
+               .replace(/&gt;/g, '>')
+               .replace(/&zwnj;/g, '‌');
+
+    // 5. Normalize Whitespace (CRITICAL FIX)
+    // Collapse horizontal spaces
+    text = text.replace(/[ \t]+/g, ' ');
+    // Collapse vertical spaces (max 2 newlines)
+    text = text.replace(/\n\s*\n/g, '\n\n');
+    
+    return text.trim();
 };
 
 // ==========================================
@@ -89,17 +103,17 @@ export const cleanAndNormalizeText = (text: string): string => {
     .replace(/ي/g, 'ی')
     .replace(/ك/g, 'ک')
     .replace(/ئ/g, 'ی')
-    // 3. STRICT SANITIZATION
+    // 3. STRICT SANITIZATION (Keep newlines)
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\u200D\u200E\u200F\u202A-\u202E]/g, ' ') 
     // 4. Normalize Numbers
     .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728)) 
-    // 5. Intelligent Punctuation Removal
-    .replace(/[.,/#!$%^&*;:{}=_`~()؟،«»"'<>\[\]]/g, " ")
+    // 5. Intelligent Punctuation Removal (Keep structure chars like : - . )
+    .replace(/[!$%^&*;={}_`~()«»"<>\[\]]/g, " ") 
     // 6. Structure Normalization
     .replace(/\r\n/g, '\n')
     .replace(/(\d+)[-.)]\s*/g, '\n$1. ') 
-    .replace(/\n\s*\n/g, '\n\n')
     .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n/g, '\n\n') // Ensure paragraphs are preserved
     .trim();
 };
 
@@ -266,8 +280,10 @@ export const splitIntoSentences = (text: string): string[] => {
 };
 
 /**
- * Smart Chunking with Priority for Paragraphs.
- * Prevents splitting instructions or lists in the middle.
+ * Robust Chunking Logic.
+ * 1. Primary split by double newlines (paragraphs).
+ * 2. If a paragraph is too big, split by sentences.
+ * 3. Accumulate paragraphs until targetSize is reached.
  */
 export const smartChunking = (text: string, targetSize?: number, overlapSize?: number): string[] => {
     const settings = getSettings();
@@ -285,16 +301,17 @@ export const smartChunking = (text: string, targetSize?: number, overlapSize?: n
         
         // If adding this paragraph exceeds target size
         if (currentChunk.length + para.length > effectiveTarget) {
-            // Push current accumulated chunk
+            // Push current accumulated chunk if it exists
             if (currentChunk) {
                 chunks.push(currentChunk.trim());
             }
             
-            // Create overlap from the end of the previous chunk
+            // Prepare overlap for the next chunk
             const overlapText = currentChunk.slice(-effectiveOverlap);
             
-            // If the paragraph itself is huge (> target), we must split it internally by sentences
+            // Handle Massive Paragraphs: If the paragraph itself is huge (> target)
             if (para.length > effectiveTarget) {
+                // Split massive paragraph by sentences
                 const sentences = splitIntoSentences(para);
                 let subChunk = overlapText; 
                 
@@ -321,9 +338,31 @@ export const smartChunking = (text: string, targetSize?: number, overlapSize?: n
         chunks.push(currentChunk.trim());
     }
 
+    // Fallback: If no newlines were found and text is huge, force split
+    if (chunks.length === 0 && text.length > effectiveTarget) {
+        const sentences = splitIntoSentences(text);
+        let subChunk = "";
+        for (const sent of sentences) {
+             if (subChunk.length + sent.length > effectiveTarget) {
+                chunks.push(subChunk.trim());
+                subChunk = subChunk.slice(-effectiveOverlap) + sent;
+            } else {
+                subChunk += sent;
+            }
+        }
+        if (subChunk) chunks.push(subChunk.trim());
+    } else if (chunks.length === 0) {
+        chunks.push(text);
+    }
+
     return chunks.filter(c => c.length > 50);
 };
 
+/**
+ * IMPROVED: Header-Aware Markdown Chunking (Section Accumulation).
+ * Instead of streaming lines, it accumulates content per section (Header)
+ * and then intelligently splits that section if it's too large using smartChunking.
+ */
 export const chunkMarkdown = (text: string, targetSize?: number, overlap?: number): string[] => {
     const settings = getSettings();
     const effectiveTarget = targetSize || settings.chunkSize;
@@ -332,42 +371,61 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
     const chunks: string[] = [];
     const lines = text.split('\n');
     
-    let currentSectionContent: string[] = [];
-    let currentHeader = ''; 
-    
+    let currentHeaderStack: string[] = []; 
+    let currentSectionContent = "";
+
     const flushSection = () => {
-        if (currentSectionContent.length === 0) return;
-        
-        const fullContent = currentSectionContent.join('\n').trim();
-        if (!fullContent) return;
+        if (!currentSectionContent.trim()) return;
 
-        if (fullContent.length > effectiveTarget) {
-            const subChunks = smartChunking(fullContent, effectiveTarget, effectiveOverlap);
-            subChunks.forEach(sc => {
-                const contextPrefix = currentHeader ? `${currentHeader}\n(ادامه بخش...)\n` : '';
-                chunks.push(`${contextPrefix}${sc}`);
-            });
+        // Context String: e.g., "[بخش: راهبری > تنظیمات]"
+        const contextHeader = currentHeaderStack.length > 0 
+            ? `[بخش: ${currentHeaderStack.join(" > ")}]\n` 
+            : "";
+
+        // If section is small enough, keep it as one chunk (plus header)
+        if (currentSectionContent.length + contextHeader.length <= effectiveTarget * 1.5) { // Allow slight overflow for cohesion
+             chunks.push((contextHeader + currentSectionContent).trim());
         } else {
-            chunks.push(currentHeader ? `${currentHeader}\n${fullContent}` : fullContent);
+             // If section is HUGE (e.g. 40 pages under one header), use smartChunking
+             const subChunks = smartChunking(currentSectionContent, effectiveTarget, effectiveOverlap);
+             subChunks.forEach(sc => {
+                 chunks.push((contextHeader + sc).trim());
+             });
         }
+        currentSectionContent = "";
     };
-
+    
     for (const line of lines) {
-        const headerMatch = line.match(/^(#{1,3})\s+(.+)/);
+        const headerMatch = line.match(/^(#{1,6})\s+(.+)/);
+        
         if (headerMatch) {
+            // New header found -> Flush previous section
             flushSection();
-            currentHeader = headerMatch[0]; 
-            currentSectionContent = [];
+
+            const level = headerMatch[1].length;
+            const title = headerMatch[2];
+            
+            // Update stack
+            if (currentHeaderStack.length >= level) {
+                currentHeaderStack = currentHeaderStack.slice(0, level - 1);
+            }
+            currentHeaderStack.push(title);
+            
+            // Add header itself to the new section content
+            currentSectionContent += line + "\n";
         } else {
-            currentSectionContent.push(line);
+            currentSectionContent += line + "\n";
         }
     }
+    
+    // Final flush
     flushSection();
 
+    // Fallback if regex failed completely (no headers found)
     if (chunks.length === 0 && text.trim().length > 0) {
         return smartChunking(text, effectiveTarget, effectiveOverlap);
     }
-    
+
     return chunks;
 };
 

@@ -61,15 +61,11 @@ const rewriteQueryWithHistory = async (currentQuery: string, history: Message[])
     ).join('\n');
 
     const prompt = `
-You are a query rewriting engine for a RAG system.
-Your task is to rewrite the "Current User Question" to be a standalone, specific search query based on the "Chat History".
-
+You are a query rewriting engine. Rewrite the "Current User Question" to be a standalone, specific search query based on "Chat History".
 Rules:
-1. Resolve pronouns (it, that, he, she, they) to their specific nouns from history.
-2. If the user asks "How do I fix it?", rewrite it as "How to fix [Specific Error from history]".
-3. If the user asks for "Difference", include the two entities being compared from history.
-4. If the question is already standalone, return it exactly as is.
-5. Output ONLY the rewritten query text in Persian. No explanations.
+1. Resolve pronouns.
+2. If asking "How to fix it?", include the context.
+3. Output ONLY the rewritten Persian query.
 
 Chat History:
 ${historyText}
@@ -104,15 +100,9 @@ const optimizeQueryAI = async (rawQuery: string): Promise<string> => {
     if (rawQuery.split(/\s+/).length < 3) return rawQuery;
 
     const prompt = `
-تو یک موتور جستجوی هوشمند برای سیستم مالی هستی. وظیفه تو استخراج "هسته معنایی" (Semantic Core) از سوال کاربر است.
-قوانین:
-1. کلمات محاوره‌ای و تعارفات (لطفا، ممنون، بی زحمت، سلام) را حذف کن.
-2. **خیلی مهم:** کلمات کلیدی سوال مثل "روش"، "نحوه"، "تفاوت"، "مراحل" را **هرگز** حذف نکن.
-3. اگر کاربر دنبال مقایسه است (فرق، تفاوت)، حتماً کلمات "تفاوت" و "تعریف" را نگه دار.
-4. خروجی فقط کلمات کلیدی نهایی با فاصله باشد.
-
-ورودی کاربر: "${rawQuery}"
-خروجی بهینه شده:
+Extract the core semantic search terms from this Persian query. Remove polite phrases. Keep technical terms.
+Query: "${rawQuery}"
+Output (terms only):
     `.trim();
 
     try {
@@ -139,11 +129,9 @@ export const extractCriticalTerms = (query: string): string[] => {
     const terms: string[] = [];
     const normalizedQuery = normalizeForSearch(query);
     
-    // 1. Technical IDs and Error Codes (Numbers > 3 digits)
     const numbers = normalizedQuery.match(/\d{3,}/g);
     if (numbers) terms.push(...numbers);
 
-    // 2. English technical terms (API, Page, Offset, T+1, GTC)
     const englishWords = normalizedQuery.match(/[a-zA-Z0-9]+[\+\-]?[0-9]*/g);
     if (englishWords) {
         englishWords.forEach(w => {
@@ -162,19 +150,17 @@ export const extractCriticalTerms = (query: string): string[] => {
     return [...new Set(terms)]; 
 };
 
-// Improved Keyword Scorer with Exact Phrase Matching
+// Enhanced Keyword Scorer with "Full Coverage" Bonus
 export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
     if (terms.length === 0) return 0;
     
-    // Normalize text
     const contentStr = (chunk.searchContent + " " + chunk.content).toLowerCase();
     const normalizedContent = normalizeForSearch(contentStr);
     const normalizedQuery = normalizeForSearch(query).toLowerCase();
 
     let score = 0;
-
-    // 1. Term Frequency (Single words)
     let matchedTermsCount = 0;
+    
     terms.forEach(term => {
         if (normalizedContent.includes(term.toLowerCase())) {
             matchedTermsCount++;
@@ -183,10 +169,15 @@ export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], qu
     
     // Coverage Score
     if (matchedTermsCount > 0) {
-        score += (matchedTermsCount / terms.length) * 0.5; // Weight: 50%
+        score += (matchedTermsCount / terms.length) * 0.6; // 60% of score comes from how many distinct terms matched
+    }
+    
+    // Bonus: If ALL critical terms are present, huge boost (likely the exact answer)
+    if (matchedTermsCount === terms.length && terms.length > 1) {
+        score += 0.3;
     }
 
-    // 2. Exact Phrase Matching (Bi-grams & Tri-grams)
+    // Exact Phrase Matching (Bi-grams & Tri-grams)
     const words = normalizedQuery.split(' ').filter(w => w.length > 2);
     for (let i = 0; i < words.length - 1; i++) {
         const biGram = words[i] + " " + words[i+1];
@@ -203,33 +194,6 @@ export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], qu
     }
 
     return score; 
-};
-
-/**
- * Simulates Cross-Encoder behavior by scoring term proximity.
- * If terms appear in the same sentence, it suggests strong semantic relevance.
- */
-const calculateProximityScore = (text: string, terms: string[]): number => {
-    if (terms.length < 2) return 0;
-    const lowerText = normalizeForSearch(text).toLowerCase();
-    // Split by sentence terminators
-    const sentences = lowerText.split(/[.?!؟\n]+/);
-    let maxScore = 0;
-    
-    for (const sent of sentences) {
-        if (!sent.trim()) continue;
-        let matchCount = 0;
-        for (const term of terms) {
-            if (sent.includes(term.toLowerCase())) matchCount++;
-        }
-        
-        // If multiple distinct terms appear in the same sentence, boost significantly
-        if (matchCount > 1) {
-            const sentenceRatio = matchCount / terms.length;
-            maxScore = Math.max(maxScore, sentenceRatio);
-        }
-    }
-    return maxScore; // Range 0 to 1
 };
 
 export const cosineSimilarity = (vecA: number[], vecB: number[]): number => {
@@ -262,126 +226,79 @@ export const processQuery = async (
       if (onStatusUpdate) onStatusUpdate({ step: 'analyzing', processingTime: 0 });
       
       let optimizedSearchQuery = query;
-      let strategyLabel = 'AI-Optimized RAG';
-
       if (chatHistory.length > 0) {
           optimizedSearchQuery = await rewriteQueryWithHistory(query, chatHistory);
-          if (optimizedSearchQuery !== query) {
-              strategyLabel = 'Context-Aware Rewrite';
-          }
       } else {
           optimizedSearchQuery = await optimizeQueryAI(query);
       }
 
       const synonymExpandedQuery = expandQueryWithSynonyms(optimizedSearchQuery);
-      if (synonymExpandedQuery.length > optimizedSearchQuery.length) {
-          strategyLabel += ' + Synonyms';
-      }
-
-      const proceduralKeywords = ['روش', 'نحوه', 'چطور', 'چگونه', 'مراحل', 'طریقه', 'آموزش'];
-      const isProcedural = proceduralKeywords.some(k => synonymExpandedQuery.includes(k));
+      const criticalTerms = extractCriticalTerms(synonymExpandedQuery);
       
-      let finalSearchQuery = synonymExpandedQuery;
-      if (isProcedural) {
-          finalSearchQuery += ' "مسیر" "منو" "دکمه" "گزینه" "ثبت"';
-          strategyLabel += ' + Procedural Boost';
-      }
-
-      const criticalTerms = extractCriticalTerms(finalSearchQuery);
-      
-      const comparisonKeywords = ['فرق', 'تفاوت', 'مقایسه', 'تمایز'];
-      const isComparison = comparisonKeywords.some(k => finalSearchQuery.includes(k));
-      if (isComparison) strategyLabel += ' (Multi-Vector)';
-
       if (onStatusUpdate) {
           onStatusUpdate({
               step: 'vectorizing',
               extractedKeywords: criticalTerms,
-              expandedQuery: finalSearchQuery, 
+              expandedQuery: synonymExpandedQuery, 
               processingTime: Date.now() - startTime
           });
       }
       
-      // 1. Vector Search
-      const mainVec = await getEmbedding(finalSearchQuery, true);
-      const isVectorValid = mainVec.some(v => v !== 0);
+      const mainVec = await getEmbedding(synonymExpandedQuery, true);
       
-      const extraVectors: number[][] = [];
-      if (isComparison) {
-          const entities = criticalTerms.filter(t => !comparisonKeywords.includes(t)).slice(0, 2);
-          for (const entity of entities) {
-              const defVec = await getEmbedding(`تعریف ${entity}`, true);
-              if (defVec.some(v => v !== 0)) extraVectors.push(defVec);
-          }
-      }
-
       const targetChunks = categoryFilter 
           ? knowledgeBase.filter(k => k.metadata?.category === categoryFilter)
           : knowledgeBase;
 
-      // 2. Score Calculation (Dual Scoring)
-      const vectorRanked = targetChunks.map(chunk => {
+      // Score Calculation
+      const scoredChunks = targetChunks.map(chunk => {
+          // 1. Vector Score
           let vectorScore = 0;
-          if (isVectorValid && chunk.embedding) {
+          if (chunk.embedding) {
               vectorScore = cosineSimilarity(mainVec, chunk.embedding);
-              for (const exVec of extraVectors) {
-                  const s = cosineSimilarity(exVec, chunk.embedding);
-                  if (s > vectorScore) vectorScore = s;
-              }
           }
-          return { id: chunk.id, chunk, vectorScore };
-      }).sort((a, b) => b.vectorScore - a.vectorScore);
 
-      const keywordRanked = targetChunks.map(chunk => {
-          // PASS finalSearchQuery for phrase matching
-          const kwScore = calculateKeywordScore(chunk, criticalTerms, finalSearchQuery);
-          // Proximity Boost (Simulate Cross-Encoder)
-          const proxScore = calculateProximityScore(chunk.content, criticalTerms);
+          // 2. Keyword Score (with Exact Phrase Boost)
+          const kwScore = calculateKeywordScore(chunk, criticalTerms, synonymExpandedQuery);
           
-          return { id: chunk.id, chunk, kwScore: kwScore + (proxScore * 0.5) };
-      }).sort((a, b) => b.kwScore - a.kwScore);
+          return { id: chunk.id, chunk, vectorScore, kwScore };
+      });
 
-      // 3. Reciprocal Rank Fusion (RRF)
+      // Reciprocal Rank Fusion (RRF)
       const k = 60;
       const rrfMap = new Map<string, number>();
       
-      vectorRanked.forEach((item, rank) => {
-          // ADJUSTED: Threshold at 0.50 since exact phrase matching now handles precision
-          if (item.vectorScore > 0.50) {
+      // Rank by Vector
+      scoredChunks.sort((a, b) => b.vectorScore - a.vectorScore).forEach((item, rank) => {
+          if (item.vectorScore > 0.42) { // Lowered threshold significantly to catch "hard" matches
               rrfMap.set(item.id, (rrfMap.get(item.id) || 0) + (1 / (k + rank + 1)));
           }
       });
 
-      keywordRanked.forEach((item, rank) => {
+      // Rank by Keyword
+      scoredChunks.sort((a, b) => b.kwScore - a.kwScore).forEach((item, rank) => {
           if (item.kwScore > 0) {
               rrfMap.set(item.id, (rrfMap.get(item.id) || 0) + (1 / (k + rank + 1)));
           }
       });
 
-      // 4. Final Sort & Reranking
+      // Final Sort
       const fusedResults = Array.from(rrfMap.entries())
           .map(([id, score]) => {
-              const chunkObj = vectorRanked.find(c => c.id === id);
-              // If not found in vector ranked (due to filter or only kw match), fallback to targetChunks
-              const chunkRef = chunkObj ? chunkObj.chunk : targetChunks.find(c => c.id === id);
-              
-              if (!chunkRef) return null;
-              
-              return { chunk: chunkRef, score };
+              const chunkObj = scoredChunks.find(c => c.id === id);
+              return { chunk: chunkObj!.chunk, score };
           })
-          .filter(item => item !== null)
-          .sort((a, b) => b!.score - a!.score) as { chunk: KnowledgeChunk, score: number }[];
+          .sort((a, b) => b.score - a.score);
 
-      // CHANGE: Lowered min confidence to prevent filtering out potential semantic matches
       const effectiveMinConfidence = 0.005; 
       
-      // CHANGE: Increased retrieval window for better coverage
-      const topDocs = fusedResults.slice(0, 15); 
+      // CHANGE: Increased retrieval window to 30 to improve Recall for specific/obscure queries
+      const topDocs = fusedResults.slice(0, 30); 
 
       if (onStatusUpdate) {
           onStatusUpdate({
               step: 'searching',
-              retrievedCandidates: topDocs.map(d => ({ 
+              retrievedCandidates: topDocs.slice(0, 8).map(d => ({ 
                   title: d.chunk.source.title, 
                   score: d.score * 30, 
                   accepted: d.score >= effectiveMinConfidence
@@ -390,38 +307,44 @@ export const processQuery = async (
           });
       }
 
-      // Filter low confidence chunks
       const validDocs = topDocs.filter(d => d.score >= effectiveMinConfidence);
 
       if (validDocs.length === 0 && !useGeneralKnowledge) {
           return { text: "متاسفانه در مستندات بارگذاری شده، اطلاعاتی در این مورد یافت نشد.", sources: [] };
       }
 
-      // CHANGE: Increased Context Window to 7 chunks to ensure the answer is likely included
-      const finalContextDocs = validDocs.slice(0, 7);
+      // Ensure we don't overflow context context window
+      const finalContextDocs = validDocs.slice(0, 8); // Send top 8 chunks to LLM
 
       const contextText = finalContextDocs.map(d => 
         `--- منبع: ${d.chunk.source.title} (صفحه ${d.chunk.source.page}) ---\n${d.chunk.content}`
       ).join('\n\n');
 
       const conversationHistoryText = chatHistory.length > 0 
-        ? `تاریخچه مکالمه اخیر:\n${chatHistory.slice(-4).map(m => `${m.role === 'user' ? 'کاربر' : 'دستیار'}: ${m.content.substring(0, 150)}...`).join('\n')}\n`
+        ? `تاریخچه مکالمه:\n${chatHistory.slice(-4).map(m => `${m.role === 'user' ? 'کاربر' : 'دستیار'}: ${m.content.substring(0, 100)}...`).join('\n')}\n`
         : '';
 
+      // IMPROVED: Strict "Chain of Thought" Prompt
       const promptContent = `
 ${conversationHistoryText}
 
-مستندات مرجع (Context) یافت شده برای سوال جدید:
+مستندات مرجع (Context) یافت شده:
 ${contextText}
 
-سوال جدید کاربر: ${query}
-(سوال بازنویسی شده توسط سیستم جهت درک بهتر: ${optimizedSearchQuery})
+سوال کاربر: ${query}
+(سوال اصلاح شده: ${optimizedSearchQuery})
 
-دستورالعمل نهایی:
-۱. فقط و فقط بر اساس "مستندات مرجع" بالا پاسخ بده.
-۲. اگر پاسخ در متن نیست، صراحتاً بگو "اطلاعاتی یافت نشد" و از خودت مطلب اضافه نکن.
-۳. اگر کاربر دنبال مسیر منو یا تنظیمات است، دقیقاً مسیر را از متن استخراج کن.
-۴. پاسخ باید فارسی، روان و بدون ذکر جملات انگلیسی بیهوده باشد.
+دستورالعمل بسیار دقیق (Strict System Rules):
+۱. تو یک دستیار فنی دقیق هستی. تنها منبع دانش تو "مستندات مرجع" بالا است.
+۲. **مهم:** قبل از پاسخ دادن، در ذهن خود چک کن که آیا پاسخ دقیقاً در متن وجود دارد؟
+۳. اگر پاسخ در مستندات نیست، فقط بگو: "متاسفانه اطلاعات کافی در مستندات یافت نشد." (هیچ چیز دیگری نگو).
+۴. **الزام ارجاع:** پاسخ باید شامل ارجاع به نام فایل باشد (مثلاً: [طبق فایل norozراهبری.docx]).
+۵. از عباراتی مثل "طبق دانش من" یا اطلاعات عمومی استفاده نکن. پاسخ باید ۱۰۰٪ مبتنی بر متن باشد.
+
+فرمت پاسخ:
+- خلاصه پاسخ
+- جزئیات (به صورت لیست)
+- منبع
 
 پاسخ شما:`;
 
@@ -442,35 +365,16 @@ ${contextText}
       if (!response.ok) throw new Error("Ollama Failed");
       const data = await response.json();
       let generatedText = data.message?.content || "";
-
-      generatedText = generatedText.replace(/^[\s\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef\u3040-\u309f\u30a0-\u30ff]+/, '');
-      generatedText = generatedText.replace(/^(Here is the answer|Based on the provided|According to)[^:\n]*[:]?\s*/i, '');
-
-      const hasPersian = /[\u0600-\u06FF]/.test(generatedText);
-      const isJapaneseRefusal = /[\u3040-\u309f\u30a0-\u30ff]/.test(generatedText);
-
-      if (!hasPersian && isJapaneseRefusal) {
-         return { 
-             text: "متاسفانه مدل هوش مصنوعی پاسخ معتبری تولید نکرد (خطای زبان). لطفاً دوباره تلاش کنید یا مدل چت را تغییر دهید.",
-             sources: validDocs.map(d => ({ ...d.chunk.source, score: d.score })),
-             debugInfo: {
-                strategy: 'Fallback (Language Error)',
-                processingTimeMs: Date.now() - startTime,
-                candidateCount: validDocs.length,
-                logicStep: 'Detected invalid Japanese response',
-                extractedKeywords: criticalTerms
-             }
-         };
-      }
+      generatedText = generatedText.replace(/^[\s\u4e00-\u9fa5]+/, ''); // Remove Chinese noise if any
 
       return { 
           text: generatedText.trim(), 
-          sources: validDocs.map(d => ({ ...d.chunk.source, score: d.score })),
+          sources: validDocs.slice(0, 5).map(d => ({ ...d.chunk.source, score: d.score })),
           debugInfo: {
-              strategy: strategyLabel + ' + RRF Fusion + Proximity',
+              strategy: 'Enhanced Hybrid RAG (v3) + CoT Prompting',
               processingTimeMs: Date.now() - startTime,
               candidateCount: validDocs.length,
-              logicStep: `Rewritten: ${finalSearchQuery}`,
+              logicStep: `Rewritten: ${synonymExpandedQuery}`,
               extractedKeywords: criticalTerms
           }
       };
