@@ -162,34 +162,47 @@ export const extractCriticalTerms = (query: string): string[] => {
     return [...new Set(terms)]; 
 };
 
-// Improved Keyword Scorer: Focuses on "Coverage" (Query Terms found) + Frequency
-export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[]): number => {
+// Improved Keyword Scorer with Exact Phrase Matching
+export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
     if (terms.length === 0) return 0;
+    
+    // Normalize text
     const contentStr = (chunk.searchContent + " " + chunk.content).toLowerCase();
     const normalizedContent = normalizeForSearch(contentStr);
-    
-    let matchedTermsCount = 0;
-    let totalFrequency = 0;
+    const normalizedQuery = normalizeForSearch(query).toLowerCase();
 
+    let score = 0;
+
+    // 1. Term Frequency (Single words)
+    let matchedTermsCount = 0;
     terms.forEach(term => {
-        // Simple token check is faster and safer than RegExp loop for mass scoring
         if (normalizedContent.includes(term.toLowerCase())) {
             matchedTermsCount++;
-            // Basic frequency check (not full regex count for speed)
-            const parts = normalizedContent.split(term.toLowerCase());
-            totalFrequency += (parts.length - 1); 
         }
     });
-
-    if (matchedTermsCount === 0) return 0;
-
-    // Coverage Score (How many of the query terms are present?) - Most Important
-    const coverage = matchedTermsCount / terms.length;
     
-    // Frequency Bonus (capped small boost)
-    const frequencyBoost = Math.min(0.2, totalFrequency * 0.01);
+    // Coverage Score
+    if (matchedTermsCount > 0) {
+        score += (matchedTermsCount / terms.length) * 0.5; // Weight: 50%
+    }
 
-    return coverage + frequencyBoost; 
+    // 2. Exact Phrase Matching (Bi-grams & Tri-grams)
+    const words = normalizedQuery.split(' ').filter(w => w.length > 2);
+    for (let i = 0; i < words.length - 1; i++) {
+        const biGram = words[i] + " " + words[i+1];
+        if (normalizedContent.includes(biGram)) {
+            score += 0.3; // Boost for 2-word phrases
+        }
+        
+        if (i < words.length - 2) {
+            const triGram = words[i] + " " + words[i+1] + " " + words[i+2];
+            if (normalizedContent.includes(triGram)) {
+                score += 0.5; // Significant boost for 3-word phrases
+            }
+        }
+    }
+
+    return score; 
 };
 
 /**
@@ -320,9 +333,9 @@ export const processQuery = async (
       }).sort((a, b) => b.vectorScore - a.vectorScore);
 
       const keywordRanked = targetChunks.map(chunk => {
-          const kwScore = calculateKeywordScore(chunk, criticalTerms);
-          // NEW: Proximity Boost (Simulate Cross-Encoder)
-          // If keywords appear close together, boost the score.
+          // PASS finalSearchQuery for phrase matching
+          const kwScore = calculateKeywordScore(chunk, criticalTerms, finalSearchQuery);
+          // Proximity Boost (Simulate Cross-Encoder)
           const proxScore = calculateProximityScore(chunk.content, criticalTerms);
           
           return { id: chunk.id, chunk, kwScore: kwScore + (proxScore * 0.5) };
@@ -333,7 +346,8 @@ export const processQuery = async (
       const rrfMap = new Map<string, number>();
       
       vectorRanked.forEach((item, rank) => {
-          if (item.vectorScore > 0.65) {
+          // ADJUSTED: Threshold at 0.50 since exact phrase matching now handles precision
+          if (item.vectorScore > 0.50) {
               rrfMap.set(item.id, (rrfMap.get(item.id) || 0) + (1 / (k + rank + 1)));
           }
       });
@@ -348,14 +362,21 @@ export const processQuery = async (
       const fusedResults = Array.from(rrfMap.entries())
           .map(([id, score]) => {
               const chunkObj = vectorRanked.find(c => c.id === id);
-              return { chunk: chunkObj!.chunk, score };
+              // If not found in vector ranked (due to filter or only kw match), fallback to targetChunks
+              const chunkRef = chunkObj ? chunkObj.chunk : targetChunks.find(c => c.id === id);
+              
+              if (!chunkRef) return null;
+              
+              return { chunk: chunkRef, score };
           })
-          .sort((a, b) => b.score - a.score);
+          .filter(item => item !== null)
+          .sort((a, b) => b!.score - a!.score) as { chunk: KnowledgeChunk, score: number }[];
 
-      const effectiveMinConfidence = 0.012;
+      // CHANGE: Lowered min confidence to prevent filtering out potential semantic matches
+      const effectiveMinConfidence = 0.005; 
       
-      // Increased retrieval window for better coverage before context selection
-      const topDocs = fusedResults.slice(0, 10); 
+      // CHANGE: Increased retrieval window for better coverage
+      const topDocs = fusedResults.slice(0, 15); 
 
       if (onStatusUpdate) {
           onStatusUpdate({
@@ -376,9 +397,8 @@ export const processQuery = async (
           return { text: "متاسفانه در مستندات بارگذاری شده، اطلاعاتی در این مورد یافت نشد.", sources: [] };
       }
 
-      // STRICT CONTEXT SELECTION: Top 5 only to reduce noise/hallucination risk
-      // This combined with Proximity Scoring acts as a Reranker.
-      const finalContextDocs = validDocs.slice(0, 5);
+      // CHANGE: Increased Context Window to 7 chunks to ensure the answer is likely included
+      const finalContextDocs = validDocs.slice(0, 7);
 
       const contextText = finalContextDocs.map(d => 
         `--- منبع: ${d.chunk.source.title} (صفحه ${d.chunk.source.page}) ---\n${d.chunk.content}`
