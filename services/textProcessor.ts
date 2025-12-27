@@ -25,6 +25,54 @@ export const stripHtml = (html: string): string => {
        .trim();
 };
 
+/**
+ * Simple HTML to Markdown converter to preserve Tables from Docx
+ * This is crucial for API documentation and settings lists.
+ */
+export const htmlToMarkdown = (html: string): string => {
+    if (!html) return '';
+    
+    let text = html;
+
+    // 1. Handle Tables: Convert <tr><td> content </td></tr> to | content |
+    text = text.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, tableContent) => {
+        let mdTable = '\n';
+        const rows = tableContent.match(/<tr[^>]*>(.*?)<\/tr>/gs);
+        if (rows) {
+            rows.forEach((row: string, index: number) => {
+                const cells = row.match(/<td[^>]*>(.*?)<\/td>/gs);
+                if (cells) {
+                    const rowContent = cells.map((cell: string) => {
+                        return stripHtml(cell).trim();
+                    }).join(' | ');
+                    mdTable += `| ${rowContent} |\n`;
+                    
+                    // Add separator after header (first row)
+                    if (index === 0) {
+                        const separator = cells.map(() => '---').join(' | ');
+                        mdTable += `| ${separator} |\n`;
+                    }
+                }
+            });
+        }
+        return mdTable + '\n';
+    });
+
+    // 2. Handle Lists
+    text = text.replace(/<li[^>]*>(.*?)<\/li>/gs, '- $1\n');
+    
+    // 3. Handle Headers
+    text = text.replace(/<h1[^>]*>(.*?)<\/h1>/gs, '# $1\n');
+    text = text.replace(/<h2[^>]*>(.*?)<\/h2>/gs, '## $1\n');
+    text = text.replace(/<h3[^>]*>(.*?)<\/h3>/gs, '### $1\n');
+    
+    // 4. Handle Paragraphs
+    text = text.replace(/<p[^>]*>(.*?)<\/p>/gs, '$1\n\n');
+
+    // 5. Final cleanup
+    return stripHtml(text);
+};
+
 // ==========================================
 // CLEANING PIPELINE
 // ==========================================
@@ -42,14 +90,11 @@ export const cleanAndNormalizeText = (text: string): string => {
     .replace(/ك/g, 'ک')
     .replace(/ئ/g, 'ی')
     // 3. STRICT SANITIZATION
-    // Remove invisible control chars but PRESERVE newlines
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\u200D\u200E\u200F\u202A-\u202E]/g, ' ') 
     // 4. Normalize Numbers
     .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728)) 
     // 5. Intelligent Punctuation Removal
-    // We replace parentheses, brackets, and quotes with SPACE to separate words attached to them.
-    // IMPORTANT: We DO NOT remove '+' or '-' to preserve terms like "T+1", "T-2"
-    .replace(/[.,/#!$%^&*;:{}=_`~()؟،«»"'<>\[\]|]/g, " ")
+    .replace(/[.,/#!$%^&*;:{}=_`~()؟،«»"'<>\[\]]/g, " ")
     // 6. Structure Normalization
     .replace(/\r\n/g, '\n')
     .replace(/(\d+)[-.)]\s*/g, '\n$1. ') 
@@ -143,19 +188,15 @@ export const classifyDocument = (text: string, filename: string): { category: Do
     return { category: 'general', subCategory: 'uncategorized' };
 };
 
-// Markdown Metadata Parser
 export const parseMarkdownMetadata = (text: string): Partial<ChunkMetadata> => {
     const meta: Partial<ChunkMetadata> = {};
     const lines = text.split('\n');
     
-    // Scan first 50 lines for "Document Control" table
     for (let i = 0; i < Math.min(lines.length, 50); i++) { 
         const line = lines[i].trim();
-        // Look for typical headers or table start
         if ((line.includes('شناسنامه سند') || line.includes('Document Control')) ||
             (line.startsWith('|') && line.includes('عنوان') && line.includes('نسخه'))) {
             
-            // Search for table header in proximity
             let headerIndex = -1;
             if (line.startsWith('|')) headerIndex = i;
             else if (i + 1 < lines.length && lines[i+1].trim().startsWith('|')) headerIndex = i + 1;
@@ -178,7 +219,7 @@ export const parseMarkdownMetadata = (text: string): Partial<ChunkMetadata> => {
                     });
                 }
             }
-            break; // Stop after finding first metadata table
+            break;
         }
     }
     return meta;
@@ -213,7 +254,6 @@ export const extractMetadata = (text: string, filename: string, category: DocCat
       if (symbols.length > 0) metadata.symbols = symbols;
   }
 
-  // Enrich with Markdown specific metadata
   const mdMeta = parseMarkdownMetadata(text);
   if (mdMeta.version) metadata.version = mdMeta.version;
   if (mdMeta.documentDate) metadata.documentDate = mdMeta.documentDate;
@@ -225,55 +265,65 @@ export const splitIntoSentences = (text: string): string[] => {
     return text.match(/[^.?!؟\n]+[.?!؟\n]+(\s+|$)|[^.?!؟\n]+$/g) || [text];
 };
 
+/**
+ * Smart Chunking with Priority for Paragraphs.
+ * Prevents splitting instructions or lists in the middle.
+ */
 export const smartChunking = (text: string, targetSize?: number, overlapSize?: number): string[] => {
     const settings = getSettings();
     const effectiveTarget = targetSize || settings.chunkSize;
     const effectiveOverlap = overlapSize || settings.chunkOverlap;
 
-    const sentences = splitIntoSentences(text);
+    // 1. Split by Paragraphs first (Double newline)
+    const paragraphs = text.split(/\n\s*\n/);
     const chunks: string[] = [];
     
-    let currentChunkSentences: string[] = [];
-    let currentSize = 0;
-    let i = 0;
-
-    while (i < sentences.length) {
-        const sentence = sentences[i];
-        const sentenceLen = sentence.length;
-
-        if (currentSize + sentenceLen > effectiveTarget && currentChunkSentences.length > 0) {
-            chunks.push(currentChunkSentences.join('').trim());
-
-            let overlapBuffer: string[] = [];
-            let overlapCount = 0;
-            for (let j = currentChunkSentences.length - 1; j >= 0; j--) {
-                const s = currentChunkSentences[j];
-                if (overlapCount + s.length < effectiveOverlap) {
-                    overlapBuffer.unshift(s); 
-                    overlapCount += s.length;
-                } else {
-                    if (overlapBuffer.length === 0) overlapBuffer.unshift(s);
-                    break;
-                }
+    let currentChunk: string = "";
+    
+    for (const para of paragraphs) {
+        if (!para.trim()) continue;
+        
+        // If adding this paragraph exceeds target size
+        if (currentChunk.length + para.length > effectiveTarget) {
+            // Push current accumulated chunk
+            if (currentChunk) {
+                chunks.push(currentChunk.trim());
             }
             
-            currentChunkSentences = [...overlapBuffer];
-            currentSize = overlapCount;
+            // Create overlap from the end of the previous chunk
+            const overlapText = currentChunk.slice(-effectiveOverlap);
+            
+            // If the paragraph itself is huge (> target), we must split it internally by sentences
+            if (para.length > effectiveTarget) {
+                const sentences = splitIntoSentences(para);
+                let subChunk = overlapText; 
+                
+                for (const sent of sentences) {
+                    if (subChunk.length + sent.length > effectiveTarget) {
+                        chunks.push(subChunk.trim());
+                        subChunk = subChunk.slice(-effectiveOverlap) + sent;
+                    } else {
+                        subChunk += sent;
+                    }
+                }
+                currentChunk = subChunk;
+            } else {
+                // Start new chunk with overlap + current paragraph
+                currentChunk = overlapText + "\n\n" + para;
+            }
+        } else {
+            // Append paragraph
+            currentChunk += (currentChunk ? "\n\n" : "") + para;
         }
-
-        currentChunkSentences.push(sentence);
-        currentSize += sentenceLen;
-        i++;
     }
-
-    if (currentChunkSentences.length > 0) {
-        chunks.push(currentChunkSentences.join('').trim());
+    
+    if (currentChunk) {
+        chunks.push(currentChunk.trim());
     }
 
     return chunks.filter(c => c.length > 50);
 };
 
-// New Structure-Aware Markdown Chunker
 export const chunkMarkdown = (text: string, targetSize?: number, overlap?: number): string[] => {
     const settings = getSettings();
     const effectiveTarget = targetSize || settings.chunkSize;
@@ -283,7 +333,7 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
     const lines = text.split('\n');
     
     let currentSectionContent: string[] = [];
-    let currentHeader = '';
+    let currentHeader = ''; 
     
     const flushSection = () => {
         if (currentSectionContent.length === 0) return;
@@ -291,11 +341,11 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
         const fullContent = currentSectionContent.join('\n').trim();
         if (!fullContent) return;
 
-        // If section is massive, split it using smartChunking, but prefix context (Header)
         if (fullContent.length > effectiveTarget) {
             const subChunks = smartChunking(fullContent, effectiveTarget, effectiveOverlap);
             subChunks.forEach(sc => {
-                chunks.push(currentHeader ? `${currentHeader}\n${sc}` : sc);
+                const contextPrefix = currentHeader ? `${currentHeader}\n(ادامه بخش...)\n` : '';
+                chunks.push(`${contextPrefix}${sc}`);
             });
         } else {
             chunks.push(currentHeader ? `${currentHeader}\n${fullContent}` : fullContent);
@@ -303,19 +353,17 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
     };
 
     for (const line of lines) {
-        // Detect H1, H2, H3
         const headerMatch = line.match(/^(#{1,3})\s+(.+)/);
         if (headerMatch) {
             flushSection();
-            currentHeader = headerMatch[0]; // Keep the whole header line like "## Title"
+            currentHeader = headerMatch[0]; 
             currentSectionContent = [];
         } else {
             currentSectionContent.push(line);
         }
     }
-    flushSection(); // Final flush
+    flushSection();
 
-    // If no headers found, fallback to smartChunking
     if (chunks.length === 0 && text.trim().length > 0) {
         return smartChunking(text, effectiveTarget, effectiveOverlap);
     }
@@ -344,19 +392,8 @@ export const chunkQA = (text: string): string[] => {
     }
     
     if (!found) {
-        const lines = text.split('\n');
-        let buffer = '';
-        for (const line of lines) {
-            if (line.includes('؟') || line.includes('?')) {
-                if (buffer) chunks.push(buffer);
-                buffer = line;
-            } else {
-                buffer += '\n' + line;
-            }
-        }
-        if (buffer) chunks.push(buffer);
-        if (chunks.length > 0) found = true;
+        return smartChunking(text);
     }
 
-    return found ? chunks : smartChunking(text);
+    return chunks;
 };

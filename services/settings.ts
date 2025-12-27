@@ -5,23 +5,22 @@ import { AppSettings } from '../types';
 const DEFAULT_SETTINGS: AppSettings = {
   ollamaBaseUrl: 'http://localhost:11434',
   chatModel: 'aya:8b',
-  embeddingModel: 'jeffh/intfloat-multilingual-e5-large-instruct:f32', // Reverted to user's preferred model
-  chunkSize: 2000,      
-  childChunkSize: 500,  
-  chunkOverlap: 300,
-  temperature: 0.1,
-  systemPrompt: `شما یک دستیار هوشمند سازمانی هستید که بر اساس "مستندات ارائه شده" پاسخ می‌دهید.
+  embeddingModel: 'jeffh/intfloat-multilingual-e5-large-instruct:f32', 
+  chunkSize: 1200,      // Increased to improve context capture (Paragraph based)
+  childChunkSize: 400,  // Adjusted relative to parent
+  chunkOverlap: 200,    // Increased overlap to prevent cutting instructions
+  temperature: 0.0,     // Keep 0 for max faithfulness
+  systemPrompt: `شما یک دستیار هوشمند سازمانی دقیق و سخت‌گیر هستید. وظیفه شما پاسخگویی "فقط و فقط" بر اساس "مستندات مرجع" (Context) ارائه شده است.
 
-قوانین پاسخگویی:
-۱. **پاسخ مستقیم:** پاسخ را مستقیم و بدون مقدمه شروع کنید.
-۲. **اولویت مسیر دسترسی:** اگر کاربر نام یک گزارش یا فرم یا عملیات (مثل تغییر ناظر) را پرسید، ابتدا "مسیر دسترسی در منو" را بنویسید.
-۳. **استناد به متن:** تمام پاسخ باید مبتنی بر [CONTEXT] باشد.
-۴. **هوشمندی در تطبیق:** اگر کاربر اصطلاحی مثل "تغییر کارگزار ناظر" را پرسید و در متن دقیقاً این عبارت نبود، به دنبال مفاهیم معادل مثل "تخصیص"، "انتقال سهم" یا "فایل DBS" بگرد و پاسخ را بر اساس آن‌ها بساز.
-۵. **عدم توهم:** اطلاعاتی خارج از مستندات اضافه نکنید، اما "نتیجه‌گیری منطقی" از اطلاعات موجود مجاز است.
-۶. **پاسخ ناقص:** اگر تمام مراحل در متن نیست، آنچه موجود است را بنویسید و ذکر کنید که "بقیه مراحل در مستندات یافت نشد" (به جای اینکه بگویید کلاً اطلاعاتی نیست).
+قوانین حیاتی (System Rules):
+۱. **ممنوعیت توهم (No Hallucination):** اگر پاسخ دقیق سوال (شامل مراحل یا اعداد مشخص) در متن موجود نیست، صریحاً بگو: "اطلاعاتی در این زمینه در مستندات یافت نشد" و از دانش قبلی خود استفاده نکن.
+۲. **استناد دقیق:** پاسخ باید دقیقاً منطبق بر متن مستندات باشد. اگر پارامتر، عدد یا نامی در متن نیست، آن را حدس نزن.
+۳. **اولویت مسیر دسترسی:** اگر کاربر درباره گزارش، فرم یا تنظیماتی سوال کرد، ابتدا "مسیر دسترسی در منو" را دقیقاً عین متن سند بنویس.
+۴. **فرمت پاسخ:** پاسخ را مستقیم و بدون مقدمه شروع کن.
+۵. **جدول و لیست:** اگر اطلاعات در سند به صورت جدول یا لیست است، در پاسخ نهایی نیز ساختار را حفظ کن.
 
-اگر هیچ اطلاعاتی حتی برای تعریف مفاهیم یافت نشد، بنویسید: "در مستندات بارگذاری شده، اطلاعاتی در این مورد یافت نشد."`,
-  minConfidence: 0.15 // Lowered to ensure semantic retrieval works better for definitions
+هشدار: اگر پاسخ در کانتکست نیست، پاسخ غلط یا حدسی نده. بگو اطلاعات موجود نیست.`,
+  minConfidence: 0.15 
 };
 
 // Internal settings state
@@ -33,10 +32,11 @@ const loadSettings = () => {
     const saved = localStorage.getItem('rayan_rag_settings');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Merge saved settings with defaults, forcing the new lower confidence if user hasn't manually set it too high
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
-      // Force update system prompt to include new logic
+      // Override specific fields to ensure updates apply to existing users
       currentSettings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+      currentSettings.chunkSize = DEFAULT_SETTINGS.chunkSize;
+      currentSettings.chunkOverlap = DEFAULT_SETTINGS.chunkOverlap;
     }
   } catch (e) {
     console.error("Failed to load settings", e);
