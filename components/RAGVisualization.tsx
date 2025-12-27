@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { PipelineData } from '../types';
 import { Search, Database, Cpu, BrainCircuit, Filter, ChevronDown, ChevronUp, Activity, Zap } from 'lucide-react';
 import { toPersianDigits } from '../services/textProcessor';
+import { getSettings } from '../services/settings';
 
 interface RAGVisualizationProps {
     data: PipelineData;
@@ -125,13 +126,44 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                         )}
 
                                         {step.id === 'searching' && (isCurrent || isDone) && data.retrievedCandidates && (
-                                            <div className="mt-2 space-y-1 animate-fade-in">
-                                                {data.retrievedCandidates.slice(0, 2).map((doc, i) => (
-                                                    <div key={i} className="flex items-center justify-between text-[9px] text-slate-400 bg-slate-800/50 p-1 rounded border border-slate-700/50">
-                                                        <span className="truncate max-w-[120px]">{doc.title}</span>
-                                                        <span className="text-amber-300 font-mono">{doc.score.toFixed(2)}</span>
+                                            <div className="mt-2 space-y-2 animate-fade-in w-full">
+                                                {/* Accepted Candidates */}
+                                                <div className="space-y-1">
+                                                     <div className="text-[10px] font-bold text-emerald-400 mb-1 flex justify-between">
+                                                        <span>نتایج منطبق</span>
+                                                        <span className="opacity-50 text-[9px]">High Confidence</span>
+                                                     </div>
+                                                     {data.retrievedCandidates.filter(c => c.accepted).slice(0, 4).map((doc, i) => (
+                                                        <div key={i} className="flex items-center justify-between text-[9px] text-emerald-100 bg-emerald-900/30 p-1.5 rounded border border-emerald-800/50 hover:bg-emerald-900/50 transition-colors">
+                                                            <span className="truncate max-w-[150px]" title={doc.title}>{doc.title}</span>
+                                                            <span className="text-emerald-300 font-mono font-bold">{toPersianDigits((doc.score * 100).toFixed(0))}%</span>
+                                                        </div>
+                                                    ))}
+                                                    {data.retrievedCandidates.filter(c => c.accepted).length === 0 && (
+                                                        <div className="text-[9px] text-slate-500 italic px-1">هیچ نتیجه با کیفیتی یافت نشد.</div>
+                                                    )}
+                                                </div>
+
+                                                {/* Rejected Candidates */}
+                                                {data.retrievedCandidates.filter(c => !c.accepted).length > 0 && (
+                                                    <div className="space-y-1 pt-2 border-t border-slate-700/50">
+                                                        <div className="text-[10px] font-bold text-rose-400 mb-1 flex justify-between">
+                                                            <span>رد شده (امتیاز پایین)</span>
+                                                            <span className="opacity-50 text-[9px]">Threshold: {toPersianDigits((getSettings().minConfidence * 100).toFixed(0))}%</span> 
+                                                        </div>
+                                                        {data.retrievedCandidates.filter(c => !c.accepted).slice(0, 3).map((doc, i) => (
+                                                            <div key={i} className="flex items-center justify-between text-[9px] text-slate-500 bg-slate-800/30 p-1.5 rounded border border-slate-700/30 opacity-70 hover:opacity-100 transition-opacity">
+                                                                <span className="truncate max-w-[150px] line-through decoration-slate-600" title={doc.title}>{doc.title}</span>
+                                                                <span className="text-rose-900/70 font-mono">{toPersianDigits((doc.score * 100).toFixed(0))}%</span>
+                                                            </div>
+                                                        ))}
+                                                        {data.retrievedCandidates.filter(c => !c.accepted).length > 3 && (
+                                                            <div className="text-[8px] text-slate-600 text-center pt-1">
+                                                                ... و {toPersianDigits(data.retrievedCandidates.filter(c => !c.accepted).length - 3)} مورد دیگر
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                ))}
+                                                )}
                                             </div>
                                         )}
                                     </div>

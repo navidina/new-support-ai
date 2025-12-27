@@ -1,4 +1,5 @@
 
+
 export interface AppSettings {
   ollamaBaseUrl: string;
   chatModel: string;
@@ -57,7 +58,7 @@ export interface PipelineData {
     extractedKeywords?: string[]; // Real extracted terms
     expandedQuery?: string;       // Synonyms added
     vectorPreview?: string;       // Visual representation of embedding
-    retrievedCandidates?: { title: string; score: number }[]; // Raw vector search results
+    retrievedCandidates?: { title: string; score: number; accepted?: boolean }[]; // Added accepted flag
     processingTime?: number;
 }
 // ----------------------------------------

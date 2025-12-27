@@ -35,6 +35,29 @@ const normalizeForSearch = (text: string): string => {
     return cleanAndNormalizeText(text);
 };
 
+// --- SYNONYM EXPANSION LOGIC ---
+const expandQueryWithSynonyms = (query: string): string => {
+    let expanded = query;
+    const lowerQuery = cleanAndNormalizeText(query).toLowerCase();
+
+    Object.entries(PERSIAN_SYNONYMS).forEach(([official, synonyms]) => {
+        // 1. If query contains a colloquial synonym, inject the official term
+        const hasSynonym = synonyms.some(syn => lowerQuery.includes(syn.toLowerCase()));
+        
+        // 2. If query contains the official term, inject common synonyms (helpful for finding docs that use simpler language)
+        const hasOfficial = lowerQuery.includes(official.toLowerCase());
+
+        if (hasSynonym && !hasOfficial) {
+            expanded += ` ${official}`;
+        } else if (hasOfficial) {
+            // Only add first 2 synonyms to avoid noise
+            expanded += ` ${synonyms.slice(0, 2).join(' ')}`;
+        }
+    });
+    
+    return expanded;
+};
+
 /**
  * REWRITE QUERY WITH CONTEXT (Follow-up Handling)
  * Uses LLM to rewrite vaguely phrased follow-up questions into standalone queries.
@@ -217,35 +240,43 @@ export const processQuery = async (
           optimizedSearchQuery = await optimizeQueryAI(query);
       }
 
+      // Step 1.5: Synonym Expansion (Deterministic)
+      // We do this BEFORE injection to ensure keywords are caught
+      const synonymExpandedQuery = expandQueryWithSynonyms(optimizedSearchQuery);
+      if (synonymExpandedQuery.length > optimizedSearchQuery.length) {
+          strategyLabel += ' + Synonyms';
+      }
+
       // --- PROCEDURAL INTENT INJECTION (The "Fix" for incomplete answers) ---
       // If the user asks "How to" or "Method", we explicitly inject navigation keywords.
       // This forces the vector search to prefer chunks that talk about menus and paths.
       const proceduralKeywords = ['روش', 'نحوه', 'چطور', 'چگونه', 'مراحل', 'طریقه', 'آموزش'];
-      const isProcedural = proceduralKeywords.some(k => optimizedSearchQuery.includes(k));
+      const isProcedural = proceduralKeywords.some(k => synonymExpandedQuery.includes(k));
       
+      let finalSearchQuery = synonymExpandedQuery;
       if (isProcedural) {
-          optimizedSearchQuery += ' "مسیر" "منو" "دکمه" "گزینه" "ثبت"';
+          finalSearchQuery += ' "مسیر" "منو" "دکمه" "گزینه" "ثبت"';
           strategyLabel += ' + Procedural Boost';
       }
       // --------------------------------------------------------------------
 
-      const criticalTerms = extractCriticalTerms(optimizedSearchQuery);
+      const criticalTerms = extractCriticalTerms(finalSearchQuery);
       
       const comparisonKeywords = ['فرق', 'تفاوت', 'مقایسه', 'تمایز'];
-      const isComparison = comparisonKeywords.some(k => optimizedSearchQuery.includes(k));
+      const isComparison = comparisonKeywords.some(k => finalSearchQuery.includes(k));
       if (isComparison) strategyLabel += ' (Multi-Vector)';
 
       if (onStatusUpdate) {
           onStatusUpdate({
               step: 'vectorizing',
               extractedKeywords: criticalTerms,
-              expandedQuery: optimizedSearchQuery, // Shows the Rewritten query in Logic Panel
+              expandedQuery: finalSearchQuery, // Shows the expanded query in Logic Panel
               processingTime: Date.now() - startTime
           });
       }
       
-      // Use Rewritten Query for Embedding
-      const mainVec = await getEmbedding(optimizedSearchQuery, true);
+      // Use Rewritten & Expanded Query for Embedding
+      const mainVec = await getEmbedding(finalSearchQuery, true);
       const isVectorValid = mainVec.some(v => v !== 0);
       
       // Step 2: Multi-Vector Strategy for Comparisons
@@ -280,6 +311,8 @@ export const processQuery = async (
           return { chunk, score: finalScore };
       });
 
+      const effectiveMinConfidence = settings.minConfidence || 0.15;
+
       const topDocs = scoredDocs
         .sort((a, b) => b.score - a.score)
         .slice(0, 15);
@@ -287,12 +320,15 @@ export const processQuery = async (
       if (onStatusUpdate) {
           onStatusUpdate({
               step: 'searching',
-              retrievedCandidates: topDocs.slice(0, 4).map(d => ({ title: d.chunk.source.title, score: d.score })),
+              retrievedCandidates: topDocs.map(d => ({ 
+                  title: d.chunk.source.title, 
+                  score: d.score,
+                  accepted: d.score >= effectiveMinConfidence
+              })),
               processingTime: Date.now() - startTime
           });
       }
 
-      const effectiveMinConfidence = settings.minConfidence || 0.15;
       const validDocs = topDocs.filter(d => d.score >= effectiveMinConfidence);
 
       if (validDocs.length === 0 && !useGeneralKnowledge) {
@@ -315,7 +351,7 @@ ${conversationHistoryText}
 ${contextText}
 
 سوال جدید کاربر: ${query}
-(سوال بازنویسی شده توسط سیستم جهت درک بهتر: ${optimizedSearchQuery})
+(سوال بازنویسی شده توسط سیستم جهت درک بهتر: ${finalSearchQuery})
 
 دستورالعمل: 
 ۱. پاسخ دقیق را بر اساس "مستندات مرجع" بنویس. 
@@ -373,7 +409,7 @@ ${contextText}
               strategy: strategyLabel,
               processingTimeMs: Date.now() - startTime,
               candidateCount: validDocs.length,
-              logicStep: `Rewritten: ${optimizedSearchQuery}`,
+              logicStep: `Rewritten: ${finalSearchQuery}`,
               extractedKeywords: criticalTerms
           }
       };
