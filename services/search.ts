@@ -1,4 +1,3 @@
-
 import { KnowledgeChunk, Source, DebugInfo, QueryResult, PipelineData, Message } from '../types';
 import { getEmbedding } from './ollama';
 import { getSettings } from './settings';
@@ -125,6 +124,46 @@ Output (terms only):
     }
 };
 
+/**
+ * Generates multiple diverse search queries to cover semantic gaps.
+ * Used when initial search fails.
+ */
+const generateMultiQueries = async (originalQuery: string): Promise<string[]> => {
+    const settings = getSettings();
+    const prompt = `
+You are an AI search expert. The user's query failed to find results in a technical manual.
+Generate 3 distinct, alternative Persian search queries to find the answer.
+Strategies:
+1. Break down complex questions.
+2. Use technical synonyms (e.g. "Branch" -> "Station").
+3. Focus on related entities (e.g. "Error 100" -> "Connection Error").
+
+Query: "${originalQuery}"
+
+Output Format: Just 3 lines of Persian queries. No numbering.
+    `.trim();
+
+    try {
+        const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: settings.chatModel,
+                stream: false,
+                messages: [{ role: 'user', content: prompt }],
+                options: { temperature: 0.7 } // Higher temp for diversity
+            }),
+        });
+        if (!response.ok) return [originalQuery];
+        const data = await response.json();
+        const content = data.message?.content?.trim() || "";
+        const lines = content.split('\n').map(l => l.replace(/^\d+[\.\-]\s*/, '').trim()).filter(l => l.length > 3);
+        return lines.slice(0, 3);
+    } catch (e) {
+        return [originalQuery];
+    }
+};
+
 export const extractCriticalTerms = (query: string): string[] => {
     const terms: string[] = [];
     const normalizedQuery = normalizeForSearch(query);
@@ -150,7 +189,7 @@ export const extractCriticalTerms = (query: string): string[] => {
     return [...new Set(terms)]; 
 };
 
-// Enhanced Keyword Scorer with "Full Coverage" Bonus
+// Original Keyword Scorer (Used for initial retrieval)
 export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
     if (terms.length === 0) return 0;
     
@@ -167,33 +206,54 @@ export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], qu
         }
     });
     
-    // Coverage Score
     if (matchedTermsCount > 0) {
-        score += (matchedTermsCount / terms.length) * 0.6; // 60% of score comes from how many distinct terms matched
+        score += (matchedTermsCount / terms.length) * 0.6;
     }
     
-    // Bonus: If ALL critical terms are present, huge boost (likely the exact answer)
     if (matchedTermsCount === terms.length && terms.length > 1) {
         score += 0.3;
     }
 
-    // Exact Phrase Matching (Bi-grams & Tri-grams)
     const words = normalizedQuery.split(' ').filter(w => w.length > 2);
     for (let i = 0; i < words.length - 1; i++) {
         const biGram = words[i] + " " + words[i+1];
         if (normalizedContent.includes(biGram)) {
-            score += 0.3; // Boost for 2-word phrases
-        }
-        
-        if (i < words.length - 2) {
-            const triGram = words[i] + " " + words[i+1] + " " + words[i+2];
-            if (normalizedContent.includes(triGram)) {
-                score += 0.5; // Significant boost for 3-word phrases
-            }
+            score += 0.3;
         }
     }
 
     return score; 
+};
+
+// --- RE-RANKING ALGORITHM ---
+// This acts as a precise filter after the initial vector retrieval.
+export const calculateAdvancedScore = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
+    const content = normalizeForSearch(chunk.content + " " + chunk.searchContent);
+    let score = 0;
+    
+    // 1. Exact Match Bonus for Critical Identifiers (e.g., Error Codes, Ticket IDs)
+    const errorCodes = query.match(/\d{3,}/g);
+    if (errorCodes) {
+        errorCodes.forEach(code => {
+            if (content.includes(code)) score += 5.0; // Huge boost for exact ID match
+        });
+    }
+
+    // 2. Term Density Check
+    if (terms.length === 0) return 0.5; // Neutral if no critical terms
+
+    let foundTerms = 0;
+    terms.forEach(term => {
+        if (content.includes(term.toLowerCase())) foundTerms++;
+    });
+    
+    // Relaxed Scoring: Removed strict 0.4 threshold.
+    // Instead, we just award points. Vector score will handle semantic matches.
+    if (foundTerms > 0) {
+        score += (foundTerms / terms.length) * 1.5;
+    }
+
+    return score;
 };
 
 export const cosineSimilarity = (vecA: number[], vecB: number[]): number => {
@@ -208,178 +268,200 @@ export const cosineSimilarity = (vecA: number[], vecB: number[]): number => {
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 };
 
+const executeSearchPass = async (
+    searchQuery: string,
+    knowledgeBase: KnowledgeChunk[],
+    categoryFilter?: string
+) => {
+    const synonymExpandedQuery = expandQueryWithSynonyms(searchQuery);
+    const criticalTerms = extractCriticalTerms(synonymExpandedQuery);
+    
+    const mainVec = await getEmbedding(synonymExpandedQuery, true);
+    
+    const targetChunks = categoryFilter 
+        ? knowledgeBase.filter(k => k.metadata?.category === categoryFilter)
+        : knowledgeBase;
+
+    const scoredChunks = targetChunks.map(chunk => {
+        let vectorScore = 0;
+        if (chunk.embedding) {
+            vectorScore = cosineSimilarity(mainVec, chunk.embedding);
+        }
+        const kwScore = calculateKeywordScore(chunk, criticalTerms, synonymExpandedQuery);
+        return { id: chunk.id, chunk, vectorScore, kwScore };
+    });
+
+    return { scoredChunks, criticalTerms, expandedQuery: synonymExpandedQuery };
+};
+
+/**
+ * Main RAG Query Processor
+ */
 export const processQuery = async (
-    query: string, 
-    knowledgeBase: KnowledgeChunk[], 
-    onStatusUpdate?: (data: PipelineData) => void,
+    query: string,
+    knowledgeBase: KnowledgeChunk[],
+    onProgress?: (data: PipelineData) => void,
     categoryFilter?: string,
-    attempt: number = 1,
-    useGeneralKnowledge: boolean = false,
-    chatHistory: Message[] = [] 
+    temperatureOverride?: number,
+    useWebSearch: boolean = false,
+    history: Message[] = []
 ): Promise<QueryResult> => {
-  const settings = getSettings();
-  const startTime = Date.now();
-  
-  if (knowledgeBase.length === 0) return { text: "پایگاه دانش خالی است.", sources: [] };
+    const settings = getSettings();
+    const startTime = Date.now();
 
-  try {
-      if (onStatusUpdate) onStatusUpdate({ step: 'analyzing', processingTime: 0 });
-      
-      let optimizedSearchQuery = query;
-      if (chatHistory.length > 0) {
-          optimizedSearchQuery = await rewriteQueryWithHistory(query, chatHistory);
-      } else {
-          optimizedSearchQuery = await optimizeQueryAI(query);
-      }
+    // 1. Analyze and Rewrite Query
+    onProgress?.({ step: 'analyzing', processingTime: Date.now() - startTime });
+    const effectiveQuery = await rewriteQueryWithHistory(query, history);
 
-      const synonymExpandedQuery = expandQueryWithSynonyms(optimizedSearchQuery);
-      const criticalTerms = extractCriticalTerms(synonymExpandedQuery);
-      
-      if (onStatusUpdate) {
-          onStatusUpdate({
-              step: 'vectorizing',
-              extractedKeywords: criticalTerms,
-              expandedQuery: synonymExpandedQuery, 
-              processingTime: Date.now() - startTime
-          });
-      }
-      
-      const mainVec = await getEmbedding(synonymExpandedQuery, true);
-      
-      const targetChunks = categoryFilter 
-          ? knowledgeBase.filter(k => k.metadata?.category === categoryFilter)
-          : knowledgeBase;
+    // 2. Vectorize and Search
+    onProgress?.({ 
+        step: 'vectorizing', 
+        expandedQuery: effectiveQuery, 
+        processingTime: Date.now() - startTime 
+    });
 
-      // Score Calculation
-      const scoredChunks = targetChunks.map(chunk => {
-          // 1. Vector Score
-          let vectorScore = 0;
-          if (chunk.embedding) {
-              vectorScore = cosineSimilarity(mainVec, chunk.embedding);
-          }
+    let { scoredChunks, criticalTerms, expandedQuery } = await executeSearchPass(effectiveQuery, knowledgeBase, categoryFilter);
 
-          // 2. Keyword Score (with Exact Phrase Boost)
-          const kwScore = calculateKeywordScore(chunk, criticalTerms, synonymExpandedQuery);
-          
-          return { id: chunk.id, chunk, vectorScore, kwScore };
-      });
+    // 3. Rank & Filter (TWO-STAGE PROCESS)
+    
+    // Stage A: Initial Retrieval (Recall)
+    // Get top 30 candidates based primarily on Vector score to ensure we don't miss semantic matches.
+    let initialCandidates = scoredChunks.map(item => {
+        // Initial score: Vector (80%) + Keyword (20%)
+        const initialScore = (item.vectorScore * 0.8) + (item.kwScore * 0.2);
+        return { ...item, initialScore };
+    }).sort((a, b) => b.initialScore - a.initialScore).slice(0, 30);
 
-      // Reciprocal Rank Fusion (RRF)
-      const k = 60;
-      const rrfMap = new Map<string, number>();
-      
-      // Rank by Vector
-      scoredChunks.sort((a, b) => b.vectorScore - a.vectorScore).forEach((item, rank) => {
-          if (item.vectorScore > 0.42) { // Lowered threshold significantly to catch "hard" matches
-              rrfMap.set(item.id, (rrfMap.get(item.id) || 0) + (1 / (k + rank + 1)));
-          }
-      });
+    // Stage B: Re-ranking (Precision)
+    let ranked = initialCandidates.map(item => {
+        const advScore = calculateAdvancedScore(item.chunk, criticalTerms, effectiveQuery);
+        
+        // Final Score combines Vector accuracy with Term Density
+        // Removed hard filter for 0 advScore to allow semantic matches to survive
+        const finalScore = item.vectorScore + advScore;
+        return { ...item, finalScore };
+    })
+    .sort((a, b) => b.finalScore - a.finalScore);
 
-      // Rank by Keyword
-      scoredChunks.sort((a, b) => b.kwScore - a.kwScore).forEach((item, rank) => {
-          if (item.kwScore > 0) {
-              rrfMap.set(item.id, (rrfMap.get(item.id) || 0) + (1 / (k + rank + 1)));
-          }
-      });
+    let topCandidates = ranked.filter(r => r.finalScore >= settings.minConfidence);
 
-      // Final Sort
-      const fusedResults = Array.from(rrfMap.entries())
-          .map(([id, score]) => {
-              const chunkObj = scoredChunks.find(c => c.id === id);
-              return { chunk: chunkObj!.chunk, score };
-          })
-          .sort((a, b) => b.score - a.score);
+    // 4. Fallback Strategy: Multi-Query
+    if (topCandidates.length === 0) {
+        onProgress?.({ 
+            step: 'searching', 
+            processingTime: Date.now() - startTime,
+            expandedQuery: "Retrying with Multi-Query strategy..." 
+        });
+        
+        const altQueries = await generateMultiQueries(effectiveQuery);
+        for (const altQ of altQueries) {
+            const altResult = await executeSearchPass(altQ, knowledgeBase, categoryFilter);
+            
+            const altRanked = altResult.scoredChunks.map(item => {
+                 const advScore = calculateAdvancedScore(item.chunk, altResult.criticalTerms, altQ);
+                 const initialScore = (item.vectorScore * 0.8) + (item.kwScore * 0.2);
+                 return { ...item, initialScore, finalScore: item.vectorScore + advScore };
+            })
+            .filter(r => r.finalScore >= settings.minConfidence)
+            .sort((a, b) => b.finalScore - a.finalScore)
+            .slice(0, 3); 
+            
+            altRanked.forEach(ar => {
+                if (!topCandidates.some(tc => tc.id === ar.id)) {
+                    topCandidates.push(ar);
+                }
+            });
+        }
+        topCandidates.sort((a, b) => b.finalScore - a.finalScore);
+    }
 
-      const effectiveMinConfidence = 0.005; 
-      
-      // CHANGE: Increased retrieval window to 30 to improve Recall for specific/obscure queries
-      const topDocs = fusedResults.slice(0, 30); 
+    onProgress?.({ 
+        step: 'searching', 
+        retrievedCandidates: topCandidates.slice(0, 5).map(c => ({ title: c.chunk.source.id, score: c.finalScore, accepted: true })),
+        extractedKeywords: criticalTerms,
+        processingTime: Date.now() - startTime 
+    });
 
-      if (onStatusUpdate) {
-          onStatusUpdate({
-              step: 'searching',
-              retrievedCandidates: topDocs.slice(0, 8).map(d => ({ 
-                  title: d.chunk.source.title, 
-                  score: d.score * 30, 
-                  accepted: d.score >= effectiveMinConfidence
-              })),
-              processingTime: Date.now() - startTime
-          });
-      }
+    if (topCandidates.length === 0) {
+        return {
+            text: "متاسفانه اطلاعاتی در مورد سوال شما در مستندات یافت نشد.",
+            sources: [],
+            debugInfo: {
+                strategy: 'No Matches',
+                processingTimeMs: Date.now() - startTime,
+                candidateCount: 0,
+                logicStep: 'Search yielded zero results above threshold',
+                extractedKeywords: criticalTerms
+            }
+        };
+    }
 
-      const validDocs = topDocs.filter(d => d.score >= effectiveMinConfidence);
+    const selectedChunks = topCandidates.slice(0, 5);
+    const contextText = selectedChunks.map(c => 
+        `[منبع: ${c.chunk.source.id}]\n${c.chunk.content}`
+    ).join('\n\n');
 
-      if (validDocs.length === 0 && !useGeneralKnowledge) {
-          return { text: "متاسفانه در مستندات بارگذاری شده، اطلاعاتی در این مورد یافت نشد.", sources: [] };
-      }
+    // 5. Generate Answer
+    onProgress?.({ step: 'generating', processingTime: Date.now() - startTime });
 
-      // Ensure we don't overflow context context window
-      const finalContextDocs = validDocs.slice(0, 8); // Send top 8 chunks to LLM
+    const systemPrompt = settings.systemPrompt;
+    const userPrompt = `
+سوال کاربر: ${query}
 
-      const contextText = finalContextDocs.map(d => 
-        `--- منبع: ${d.chunk.source.title} (صفحه ${d.chunk.source.page}) ---\n${d.chunk.content}`
-      ).join('\n\n');
-
-      const conversationHistoryText = chatHistory.length > 0 
-        ? `تاریخچه مکالمه:\n${chatHistory.slice(-4).map(m => `${m.role === 'user' ? 'کاربر' : 'دستیار'}: ${m.content.substring(0, 100)}...`).join('\n')}\n`
-        : '';
-
-      // IMPROVED: Strict "Chain of Thought" Prompt
-      const promptContent = `
-${conversationHistoryText}
-
-مستندات مرجع (Context) یافت شده:
+مستندات یافت شده:
 ${contextText}
 
-سوال کاربر: ${query}
-(سوال اصلاح شده: ${optimizedSearchQuery})
+با توجه به مستندات بالا، به سوال پاسخ دهید.
+`;
 
-دستورالعمل بسیار دقیق (Strict System Rules):
-۱. تو یک دستیار فنی دقیق هستی. تنها منبع دانش تو "مستندات مرجع" بالا است.
-۲. **مهم:** قبل از پاسخ دادن، در ذهن خود چک کن که آیا پاسخ دقیقاً در متن وجود دارد؟
-۳. اگر پاسخ در مستندات نیست، فقط بگو: "متاسفانه اطلاعات کافی در مستندات یافت نشد." (هیچ چیز دیگری نگو).
-۴. **الزام ارجاع:** پاسخ باید شامل ارجاع به نام فایل باشد (مثلاً: [طبق فایل norozراهبری.docx]).
-۵. از عباراتی مثل "طبق دانش من" یا اطلاعات عمومی استفاده نکن. پاسخ باید ۱۰۰٪ مبتنی بر متن باشد.
+    try {
+        const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: settings.chatModel,
+                stream: false,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ],
+                options: { 
+                    temperature: temperatureOverride ?? settings.temperature 
+                }
+            }),
+        });
 
-فرمت پاسخ:
-- خلاصه پاسخ
-- جزئیات (به صورت لیست)
-- منبع
+        if (!response.ok) {
+            throw new Error(`Ollama API Error (${response.status})`);
+        }
 
-پاسخ شما:`;
+        const data = await response.json();
+        const generatedText = data.message?.content || "";
 
-      const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: settings.chatModel,
-          stream: false,
-          messages: [
-            { role: 'system', content: settings.systemPrompt },
-            { role: 'user', content: promptContent }
-          ],
-          options: { temperature: settings.temperature }
-        }),
-      });
+        return {
+            text: generatedText,
+            sources: selectedChunks.map(c => c.chunk.source),
+            debugInfo: {
+                strategy: 'RAG (Re-ranked)',
+                processingTimeMs: Date.now() - startTime,
+                candidateCount: topCandidates.length,
+                logicStep: 'Answer generated from top candidates',
+                extractedKeywords: criticalTerms
+            }
+        };
 
-      if (!response.ok) throw new Error("Ollama Failed");
-      const data = await response.json();
-      let generatedText = data.message?.content || "";
-      generatedText = generatedText.replace(/^[\s\u4e00-\u9fa5]+/, ''); // Remove Chinese noise if any
-
-      return { 
-          text: generatedText.trim(), 
-          sources: validDocs.slice(0, 5).map(d => ({ ...d.chunk.source, score: d.score })),
-          debugInfo: {
-              strategy: 'Enhanced Hybrid RAG (v3) + CoT Prompting',
-              processingTimeMs: Date.now() - startTime,
-              candidateCount: validDocs.length,
-              logicStep: `Rewritten: ${synonymExpandedQuery}`,
-              extractedKeywords: criticalTerms
-          }
-      };
-
-  } catch (error: any) {
-    return { text: "خطا در پردازش درخواست.", sources: [], error: error.message };
-  }
+    } catch (error: any) {
+         if (error.name === 'TypeError' && error.message.includes('fetch')) {
+             return {
+                 text: "خطا در ارتباط با سرور هوش مصنوعی (Ollama). لطفا اتصال را بررسی کنید.",
+                 sources: [],
+                 error: "OLLAMA_CONNECTION_REFUSED"
+             };
+         }
+         return {
+             text: `خطا در تولید پاسخ: ${error.message}`,
+             sources: [],
+             error: error.message
+         };
+    }
 };

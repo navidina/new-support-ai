@@ -14,9 +14,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 قوانین حیاتی (CRITICAL RULES):
 ۱. اگر پاسخ سوال در متن نیست، **حتماً** بگو "اطلاعات موجود نیست". حدس نزن.
-۲. **ارجاع دهی:** برای هر جمله‌ای که می‌گویی، باید منبع آن را از متن پیدا کنی و (به صورت ضمنی یا صریح) در پاسخ منعکس کنی.
+۲. **عدم ذکر منبع در متن:** نام فایل‌ها، شماره صفحات یا شناسه منابع (مثل [Doc1] یا [Source]) را در متن پاسخ **ننویسید**. منابع به صورت جداگانه توسط سیستم نمایش داده می‌شوند.
 ۳. در پاسخ دادن به سوالات فنی (مثل خطاها یا تنظیمات)، نام دقیق پارامترها و مسیرهای منو را عیناً از متن کپی کن.
-۴. پاسخ باید خلاصه، فنی و بدون حاشیه باشد.`,
+۴. پاسخ باید خلاصه، فنی، روان و بدون حاشیه باشد.`,
   minConfidence: 0.15 
 };
 
@@ -30,6 +30,7 @@ const loadSettings = () => {
     if (saved) {
       const parsed = JSON.parse(saved);
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
+      // Override system prompt with the new default to ensure the fix applies even if user has saved settings
       currentSettings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
       currentSettings.chunkSize = DEFAULT_SETTINGS.chunkSize;
       currentSettings.chunkOverlap = DEFAULT_SETTINGS.chunkOverlap;

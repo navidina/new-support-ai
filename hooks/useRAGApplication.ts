@@ -198,7 +198,7 @@ export const useRAGApplication = () => {
                         if (msg.id === responseMsgId) {
                             return {
                                 ...msg,
-                                pipelineData: pipelineData
+                                pipelineData: { ...msg.pipelineData, ...pipelineData } // MERGE previous data
                             };
                         }
                         return msg;
@@ -232,8 +232,9 @@ export const useRAGApplication = () => {
                             options: response.isAmbiguous ? response.options : undefined, 
                             debugInfo: response.debugInfo,
                             isThinking: false,
-                            // Ensure final state is visible
+                            // Ensure final state is visible by merging
                             pipelineData: { 
+                                ...msg.pipelineData,
                                 step: 'generating', 
                                 extractedKeywords: response.debugInfo?.extractedKeywords,
                                 processingTime: response.debugInfo?.processingTimeMs 
