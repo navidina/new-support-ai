@@ -156,18 +156,49 @@ export const clearDatabase = async (): Promise<void> => {
 };
 
 /**
- * Exports the 'chunks' collection to a JSON string.
- * @returns {Promise<string>} JSON string of the database content.
+ * Exports the 'chunks' collection to a Blob directly to avoid large string allocation.
+ * @returns {Promise<Blob>} JSON Blob of the database content.
  */
-export const exportDatabaseToJson = async (): Promise<string> => {
+export const exportDatabaseToBlob = async (): Promise<Blob> => {
     const chunks = await loadChunksFromDB();
-    const exportData = {
+    
+    const header = {
         version: "3.0",
         timestamp: new Date().toISOString(),
-        count: chunks.length,
-        data: chunks
+        count: chunks.length
     };
-    return JSON.stringify(exportData, null, 2);
+    
+    // Prepare JSON structure manually to stream data into Blob parts
+    // Structure: { ...header, "data": [ ...chunks... ] }
+    
+    const headerStr = JSON.stringify(header, null, 2);
+    // Remove the last closing brace '}' to append "data" property
+    const lastBraceIndex = headerStr.lastIndexOf('}');
+    const openJson = headerStr.substring(0, lastBraceIndex);
+    
+    const blobParts: string[] = [openJson + ',\n  "data": [\n'];
+    
+    // Process chunks in blocks to avoid UI freeze if needed, 
+    // but here mainly to avoid huge single string
+    for (let i = 0; i < chunks.length; i++) {
+        const chunkJson = JSON.stringify(chunks[i], null, 2);
+        // Add comma for all except first item
+        const prefix = i === 0 ? '' : ',\n';
+        blobParts.push(prefix + chunkJson);
+    }
+    
+    blobParts.push('\n  ]\n}'); // Close array and object
+    
+    return new Blob(blobParts, { type: 'application/json' });
+};
+
+/**
+ * Legacy export function (kept for compatibility if needed, but prefer exportDatabaseToBlob)
+ * @deprecated Use exportDatabaseToBlob for better memory management.
+ */
+export const exportDatabaseToJson = async (): Promise<string> => {
+    const blob = await exportDatabaseToBlob();
+    return await blob.text();
 };
 
 /**

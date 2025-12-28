@@ -1,5 +1,6 @@
 
-import { KnowledgeChunk, GraphNode, GraphLink, SchemaEntityType } from '../types';
+
+import { KnowledgeChunk, GraphNode, GraphLink } from '../types';
 
 /**
  * Labels for mapping category codes to human-readable Persian names.
@@ -16,24 +17,16 @@ export const categoryLabels: Record<string, string> = {
     'general': 'عمومی'
 };
 
-/**
- * Labels for mapping sub-category codes.
- */
 export const subCategoryLabels: Record<string, string> = {
-    'basic_info': 'اطلاعات پایه',
-    'accounting': 'حسابداری/مالی',
+    'basic_info': 'مدیریت اطلاعات پایه',
+    'accounting': 'امور مالی و حسابداری',
     'treasury': 'خزانه‌داری',
     'securities_ops': 'عملیات اوراق',
     'general_backoffice': 'بک‌آفیس عمومی',
-    'exir': 'اکسیر',
-    'recsar': 'رکسار',
+    'exir': 'سامانه معاملاتی اکسیر',
+    'recsar': 'سامانه معاملاتی رکسار',
     'rayan_mobile': 'رایان همراه',
-    'pwa': 'وب اپلیکیشن',
-    'general_online': 'آنلاین عمومی',
-    'contracts': 'قراردادها',
-    'portfolio_ops': 'عملیات سبد',
-    'portfolio_reports': 'گزارشات',
-    'general_portfolio': 'سبد عمومی',
+    'pwa': 'نسخه وب‌اپلیکیشن',
     'fund_ops': 'صدور و ابطال',
     'market_making': 'بازارگردانی',
     'fund_api': 'API صندوق',
@@ -42,57 +35,15 @@ export const subCategoryLabels: Record<string, string> = {
     'energy': 'بورس انرژی',
     'futures': 'آتی',
     'financial_reconciliation': 'مغایرت مالی',
-    'trading_issues': 'مشکلات معاملات',
-    'access_issues': 'دسترسی/لاگین',
+    'trading_issues': 'خطاهای سفارش‌گذاری',
+    'access_issues': 'مشکلات دسترسی',
     'general_ticket': 'تیکت‌های عمومی',
     'ipo': 'عرضه اولیه',
     'clearing': 'تسویه و پایاپای',
     'payment_gateways': 'درگاه پرداخت',
     'web_service': 'وب‌سرویس',
     'network_security': 'شبکه/امنیت',
-    'uncategorized': 'سایر'
-};
-
-const GRANULAR_TOPICS: Record<string, string> = {
-    'رایان کلاب': 'باشگاه مشتریان',
-    'اختیار معامله': 'معاملات آپشن',
-    'همراه صندوق': 'اپلیکیشن صندوق',
-    'ورود دو مرحله': 'احراز هویت',
-    'فراموشی رمز': 'بازیابی رمز عبور',
-    'رمز عبور اشتباه': 'خطای لاگین',
-    'حساب مسدود': 'مسدودی حساب',
-    'سفارش شرطی': 'سفارش شرطی',
-    'خرید عرضه اولیه': 'عرضه اولیه',
-    'فروش تعهدی': 'فروش تعهدی',
-    'صف خرید': 'مدیریت صف',
-    'مغایرت ریالی': 'مغایرت مالی',
-    'واریز آنی': 'پرداخت الکترونیک',
-    'صدور واحد': 'صدور صندوق',
-    'ابطال واحد': 'ابطال صندوق',
-    'nav ابطال': 'محاسبه NAV',
-    'خطای 10061': 'خطای شبکه',
-    'تایم اوت': 'خطای شبکه',
-    'شعب': 'مدیریت شعب',
-    'سجام': 'احراز هویت سجام',
-    'پایاپای': 'امور تسویه'
-};
-
-export const detectGranularTopic = (text: string): string => {
-    const content = text.toLowerCase();
-    let bestMatch = 'سایر موضوعات';
-    let maxScore = 0;
-
-    for (const [keyword, topicLabel] of Object.entries(GRANULAR_TOPICS)) {
-        if (content.includes(keyword.toLowerCase())) {
-            const score = keyword.length * 2; 
-            if (score > maxScore) {
-                maxScore = score;
-                bestMatch = topicLabel;
-            }
-        }
-    }
-    if (maxScore > 0) return bestMatch;
-    return 'عمومی';
+    'uncategorized': 'سایر مستندات'
 };
 
 const calculateTreeLayout = (rootId: string, nodes: GraphNode[], links: GraphLink[]) => {
@@ -147,8 +98,6 @@ export const prepareGraphData = (chunks: KnowledgeChunk[], visibleCategories: Se
     const nodes: GraphNode[] = [];
     const links: GraphLink[] = [];
     const treeLinks: GraphLink[] = [];
-    const networkLinks: GraphLink[] = [];
-    const topicLinks: GraphLink[] = [];
 
     const rootNode: GraphNode = {
         id: 'root',
@@ -160,13 +109,10 @@ export const prepareGraphData = (chunks: KnowledgeChunk[], visibleCategories: Se
     nodes.push(rootNode);
 
     const categories = new Map<string, GraphNode>();
-    const subCategories = new Map<string, GraphNode>();
     const files = new Map<string, GraphNode>();
-    const topics = new Map<string, GraphNode>();
 
     chunks.forEach(chunk => {
         const catKey = chunk.metadata?.category || 'general';
-        const subKey = chunk.metadata?.subCategory || 'uncategorized';
         const fileKey = chunk.source.id;
         
         if (!visibleCategories.has(catKey)) return;
@@ -183,53 +129,9 @@ export const prepareGraphData = (chunks: KnowledgeChunk[], visibleCategories: Se
             };
             categories.set(catKey, catNode);
             nodes.push(catNode);
-            
-            links.push({ source: 'root', target: catNode.id });
             treeLinks.push({ source: 'root', target: catNode.id });
-            networkLinks.push({ source: 'root', target: catNode.id });
-            topicLinks.push({ source: 'root', target: catNode.id });
         }
         categories.get(catKey)!.chunkCount!++;
-
-        const subId = `sub-${catKey}-${subKey}`;
-        if (!subCategories.has(subId)) {
-            const subNode: GraphNode = {
-                id: subId,
-                group: 'subCategory',
-                label: subCategoryLabels[subKey] || subKey,
-                fullLabel: subCategoryLabels[subKey] || subKey,
-                x: (Math.random() - 0.5) * 500,
-                y: (Math.random() - 0.5) * 500,
-                vx: 0, vy: 0, radius: 15, baseRadius: 15, color: '#10b981', chunkCount: 0
-            };
-            subCategories.set(subId, subNode);
-            nodes.push(subNode);
-            
-            links.push({ source: `cat-${catKey}`, target: subId });
-            treeLinks.push({ source: `cat-${catKey}`, target: subId });
-            networkLinks.push({ source: `cat-${catKey}`, target: subId });
-            
-            const topicLabel = detectGranularTopic(chunk.content);
-            const topicId = `topic-${topicLabel}`;
-            if (!topics.has(topicId)) {
-                const topicNode: GraphNode = {
-                    id: topicId,
-                    group: 'topic',
-                    label: topicLabel,
-                    fullLabel: topicLabel,
-                    x: (Math.random() - 0.5) * 600,
-                    y: (Math.random() - 0.5) * 600,
-                    vx: 0, vy: 0, radius: 20, baseRadius: 20, color: '#8b5cf6', chunkCount: 0, relatedChunks: []
-                };
-                topics.set(topicId, topicNode);
-                nodes.push(topicNode);
-                topicLinks.push({ source: 'root', target: topicId }); 
-            }
-            const tNode = topics.get(topicId)!;
-            tNode.chunkCount!++;
-            tNode.relatedChunks!.push(chunk);
-        }
-        subCategories.get(subId)!.chunkCount!++;
 
         const fileId = `file-${fileKey}`;
         if (!files.has(fileId)) {
@@ -244,90 +146,19 @@ export const prepareGraphData = (chunks: KnowledgeChunk[], visibleCategories: Se
             };
             files.set(fileId, fileNode);
             nodes.push(fileNode);
-            links.push({ source: subId, target: fileId });
-            treeLinks.push({ source: subId, target: fileId });
-            networkLinks.push({ source: subId, target: fileId });
+            treeLinks.push({ source: `cat-${catKey}`, target: fileId });
         }
         files.get(fileId)!.chunkCount!++;
-        
-        const topicLabel = detectGranularTopic(chunk.content);
-        const topicId = `topic-${topicLabel}`;
-        topicLinks.push({ source: topicId, target: fileId });
-    });
-
-    const categoryNodes = Array.from(categories.values());
-    const angleStep = (2 * Math.PI) / categoryNodes.length;
-    categoryNodes.forEach((cat, i) => {
-        const angle = i * angleStep;
-        cat.radialX = Math.cos(angle) * 150;
-        cat.radialY = Math.sin(angle) * 150;
-        const relatedSubs = nodes.filter(n => n.group === 'subCategory' && n.id.includes(cat.id.replace('cat-', '')));
-        const subAngleStep = 0.5;
-        const startSubAngle = angle - (relatedSubs.length * subAngleStep) / 2;
-        relatedSubs.forEach((sub, j) => {
-            const subAngle = startSubAngle + j * subAngleStep;
-            sub.radialX = Math.cos(subAngle) * 300;
-            sub.radialY = Math.sin(subAngle) * 300;
-        });
     });
 
     const validTreeLinks = treeLinks.filter(l => nodes.some(n => n.id === l.source) && nodes.some(n => n.id === l.target));
     calculateTreeLayout('root', nodes, validTreeLinks);
 
-    const topicNodes = Array.from(topics.values());
-    const cols = Math.ceil(Math.sqrt(topicNodes.length));
-    const spacing = 150;
-    topicNodes.forEach((t, i) => {
-        const row = Math.floor(i / cols);
-        const col = i % cols;
-        t.metadata = { ...t.metadata, topicTreeX: (col - cols/2) * spacing, topicTreeY: (row - cols/2) * spacing };
-    });
-
-    return { nodes, links, treeLinks, networkLinks, topicLinks };
-};
-
-export const prepareSmartGraphData = (chunks: KnowledgeChunk[]) => {
-    const nodes = new Map<string, GraphNode>();
-    const links: GraphLink[] = [];
-
-    chunks.forEach(chunk => {
-        const text = chunk.content;
-        const concepts = [];
-        if (text.includes('خطا') || text.includes('مشکل')) concepts.push('خطاها و مشکلات');
-        if (text.includes('اکسیر')) concepts.push('سامانه اکسیر');
-        if (text.includes('رکسار')) concepts.push('سامانه رکسار');
-        if (text.includes('صندوق') || text.includes('ETF')) concepts.push('مدیریت صندوق');
-        if (text.includes('سند') || text.includes('حسابداری')) concepts.push('حسابداری');
-        if (text.includes('کارمزد')) concepts.push('مدیریت کارمزد');
-        if (text.includes('سفارش')) concepts.push('سفارش‌گذاری');
-
-        concepts.forEach(c => {
-            if (!nodes.has(c)) {
-                nodes.set(c, {
-                    id: c, group: 'concept', label: c, fullLabel: c,
-                    x: (Math.random() - 0.5) * 400, y: (Math.random() - 0.5) * 400,
-                    vx: 0, vy: 0, radius: 35, baseRadius: 35, color: '#ec4899', chunkCount: 0
-                });
-            }
-            nodes.get(c)!.chunkCount!++;
-        });
-
-        const fileId = `file-${chunk.source.id}`;
-        if (!nodes.has(fileId)) {
-            nodes.set(fileId, {
-                id: fileId, group: 'file', label: chunk.source.id.substring(0, 10) + '...', fullLabel: chunk.source.id,
-                x: (Math.random() - 0.5) * 600, y: (Math.random() - 0.5) * 600,
-                vx: 0, vy: 0, radius: 6, baseRadius: 6, color: '#94a3b8', chunkCount: 0
-            });
-        }
-        concepts.forEach(c => links.push({ source: c, target: fileId, type: 'semantic' }));
-    });
-
-    return { nodes: Array.from(nodes.values()), links: links, treeLinks: [], networkLinks: [], topicLinks: [] };
+    return { nodes, links, treeLinks, networkLinks: [], topicLinks: [] };
 };
 
 // ==========================================
-// TICKET-FOCUSED SCHEMA GRAPH LOGIC (REVISED)
+// TICKET-FOCUSED SCHEMA GRAPH LOGIC
 // ==========================================
 
 const TICKET_CONFIG = {
@@ -382,7 +213,7 @@ const extractTicketEntities = (text: string) => {
     // 3. Detect Issue
     let issueMatch = TICKET_CONFIG.issues.find(i => i.patterns.some(p => lower.includes(p)));
     
-    // Specific Error Code Extraction (e.g., "Error 10061")
+    // Specific Error Code Extraction
     const errCodeMatch = lower.match(/(خطای|error)\s*[:#-]?\s*(\d{3,})/);
     let specificIssueLabel = issueMatch ? issueMatch.label : null;
     if (errCodeMatch) {
@@ -395,15 +226,10 @@ const extractTicketEntities = (text: string) => {
     return { sysKey, compMatch, issueLabel: specificIssueLabel, actionMatch };
 };
 
-/**
- * Fundamental Logic Revision:
- * Creates a "Root Cause Analysis" graph specifically for Tickets.
- * Structure: System -> Component -> Issue -> Solution
- */
 export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
     const nodesMap = new Map<string, GraphNode>();
     const links: GraphLink[] = [];
-    const MAX_NODES = 200; // stricter limit for clarity
+    const MAX_NODES = 200; 
 
     // 1. Create Base System Nodes
     Object.entries(TICKET_CONFIG.systems).forEach(([key, conf]) => {
@@ -418,7 +244,6 @@ export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
     });
 
     // 2. Filter & Process Chunks
-    // We prioritize chunks that look like tickets or troubleshooting guides
     const ticketChunks = chunks.filter(c => 
         c.metadata?.category === 'troubleshooting' || 
         c.metadata?.ticketId || 
@@ -432,7 +257,6 @@ export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
         const { sysKey, compMatch, issueLabel, actionMatch } = extractTicketEntities(chunk.content);
         const sysId = `sys-${sysKey}`;
         
-        // --- Add Component Node (Module) ---
         let compId = '';
         if (compMatch) {
             compId = `comp-${sysKey}-${compMatch.key}`;
@@ -443,17 +267,14 @@ export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
                     y: nodesMap.get(sysId)!.y + (Math.random()-0.5)*100,
                     vx: 0, vy: 0, radius: 25, baseRadius: 25, color: '#f59e0b', chunkCount: 1
                 });
-                // Link System -> Component
                 links.push({ source: sysId, target: compId });
             } else {
                 nodesMap.get(compId)!.chunkCount!++;
             }
         }
 
-        // --- Add Issue Node (The Problem) ---
         let issueId = '';
         if (issueLabel) {
-            // Use label as ID to merge similar errors (e.g., all "Error 10061" nodes merge)
             const cleanLabel = issueLabel.replace(/\s+/g, '-');
             issueId = `issue-${sysKey}-${cleanLabel}`;
             
@@ -467,15 +288,12 @@ export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
                 nodesMap.get(issueId)!.chunkCount!++;
             }
 
-            // Link: Component -> Issue OR System -> Issue (if no component detected)
             const parentId = compId || sysId;
-            // Avoid duplicates
             if (!links.some(l => l.source === parentId && l.target === issueId)) {
                 links.push({ source: parentId, target: issueId, type: 'CAUSED_BY' });
             }
         }
 
-        // --- Add Action Node (The Solution) ---
         if (actionMatch && issueId) {
             const actionId = `act-${actionMatch.key}`;
             if (!nodesMap.has(actionId)) {
@@ -485,14 +303,12 @@ export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
                     vx: 0, vy: 0, radius: 15, baseRadius: 15, color: '#10b981', chunkCount: 1
                 });
             }
-            // Link: Action -> Issue (Solves)
             if (!links.some(l => l.source === actionId && l.target === issueId)) {
                 links.push({ source: actionId, target: issueId, type: 'SOLVES' });
             }
         }
     });
 
-    // Remove lonely System nodes to clean up graph
     const usedSystemIds = new Set(links.map(l => l.source));
     const finalNodes = Array.from(nodesMap.values()).filter(n => 
         n.group !== 'System' || usedSystemIds.has(n.id) || n.chunkCount! > 0
@@ -502,5 +318,86 @@ export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
         nodes: finalNodes, 
         links, 
         treeLinks: [], networkLinks: [], topicLinks: [] 
+    };
+};
+
+// ==========================================
+// GraphRAG LOGIC (Entity Extraction & Linking)
+// ==========================================
+
+const KEY_ENTITIES = [
+    'اکسیر', 'رکسار', 'رایان همراه', 'پایاپای', 'خزانه‌داری', 'سجام', 'شاپرک', 'بانک', 'کارگزاری', 'صندوق', 'ETF',
+    'خطای 10061', 'مغایرت', 'مانده', 'سفارش', 'اعتبار', 'پورتفو', 'دیده‌بان', 'معامله', 'عرضه اولیه',
+    'سرور', 'دیتابیس', 'وب‌سرویس', 'API', 'لینک', 'شبکه', 'فایروال', 'IP'
+];
+
+export const prepareGraphRagData = (chunks: KnowledgeChunk[]) => {
+    const nodes = new Map<string, GraphNode>();
+    const links: GraphLink[] = [];
+    const entityIndex = new Map<string, string[]>(); // Map Entity -> ChunkIDs
+
+    // 1. Extract Entities from Chunks
+    chunks.forEach(chunk => {
+        const text = chunk.content;
+        
+        // Find entities present in this chunk
+        const foundEntities = KEY_ENTITIES.filter(entity => text.includes(entity));
+        
+        // Add implicit entities from Metadata
+        if (chunk.metadata?.ticketId) foundEntities.push(`تیکت ${chunk.metadata.ticketId}`);
+        if (chunk.metadata?.category) foundEntities.push(categoryLabels[chunk.metadata.category] || chunk.metadata.category);
+
+        foundEntities.forEach(entity => {
+            if (!entityIndex.has(entity)) entityIndex.set(entity, []);
+            entityIndex.get(entity)!.push(chunk.id);
+
+            if (!nodes.has(entity)) {
+                const isSystem = ['اکسیر', 'رکسار', 'رایان همراه', 'پایاپای', 'خزانه‌داری'].includes(entity);
+                const isError = entity.includes('خطا') || entity.includes('مغایرت');
+                
+                nodes.set(entity, {
+                    id: entity,
+                    group: isSystem ? 'System' : (isError ? 'Issue' : 'Concept'),
+                    label: entity,
+                    fullLabel: entity,
+                    x: (Math.random() - 0.5) * 600,
+                    y: (Math.random() - 0.5) * 600,
+                    vx: 0, vy: 0,
+                    radius: isSystem ? 30 : 15,
+                    baseRadius: isSystem ? 30 : 15,
+                    color: isSystem ? '#2563eb' : (isError ? '#ef4444' : '#10b981'),
+                    chunkCount: 1
+                });
+            } else {
+                nodes.get(entity)!.chunkCount!++;
+            }
+        });
+
+        // Create Relationships (Co-occurrence)
+        for (let i = 0; i < foundEntities.length; i++) {
+            for (let j = i + 1; j < foundEntities.length; j++) {
+                const e1 = foundEntities[i];
+                const e2 = foundEntities[j];
+                // Simple unique link key to avoid duplicates
+                const linkId = [e1, e2].sort().join('-'); 
+                
+                // We add links but in a real GraphRAG we would weight them. 
+                // Here we just ensure they exist.
+                if (!links.some(l => (l.source === e1 && l.target === e2) || (l.source === e2 && l.target === e1))) {
+                    links.push({ source: e1, target: e2, type: 'semantic' });
+                }
+            }
+        }
+    });
+
+    // 2. Add Cluster/Community Nodes (Optional - simplified as Category Hubs)
+    // Already handled by including Categories as entities above.
+
+    return { 
+        nodes: Array.from(nodes.values()), 
+        links, 
+        treeLinks: [], 
+        networkLinks: [], 
+        topicLinks: [] 
     };
 };

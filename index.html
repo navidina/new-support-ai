@@ -80,6 +80,7 @@
       }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
       body, input, textarea, button, select, pre, code {
@@ -118,5 +119,13 @@
 </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Initialize Mermaid
+      document.addEventListener('DOMContentLoaded', function() {
+        if (window.mermaid) {
+          mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+        }
+      });
+    </script>
   </body>
 </html>

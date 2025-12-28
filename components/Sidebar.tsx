@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Network, History, Plus, Settings, HelpCircle, ClipboardCheck, Book, Trash2, MessageSquare, Sparkles, Box, BrainCircuit, Share2, CircleDot, Lightbulb, Workflow, GitMerge } from 'lucide-react';
+import { Network, History, Plus, Settings, HelpCircle, ClipboardCheck, Book, Trash2, MessageSquare, Sparkles, Box, Share2, Workflow, GitMerge } from 'lucide-react';
 import { Conversation, GraphLayoutMode } from '../types';
 import Button from './Button';
 
@@ -24,12 +24,8 @@ interface SidebarProps {
 
 const graphModes = [
     { id: 'schema', label: 'طرح‌واره (Schema)', icon: Box, desc: 'نمایش ساختار سیستم‌ها و مشکلات' },
-    { id: 'smart', label: 'هوشمند (Smart)', icon: BrainCircuit, desc: 'خوشه‌بندی مفاهیم کلیدی' },
-    { id: 'force', label: 'نیروی جاذبه (Force)', icon: Share2, desc: 'نمایش فیزیکی ارتباطات فایل‌ها' },
-    { id: 'radial', label: 'شعاعی (Radial)', icon: CircleDot, desc: 'نمایش متمرکز بر دسته‌ها' },
-    { id: 'topic', label: 'درخت موضوعات', icon: Lightbulb, desc: 'دسته‌بندی موضوعی هوشمند' },
-    { id: 'tree', label: 'سلسله‌مراتب (Tree)', icon: Workflow, desc: 'نمایش درختی بالا به پایین' },
-    { id: 'network', label: 'شبکه (Network)', icon: GitMerge, desc: 'نمایش ارتباطات پیچیده' },
+    { id: 'tree', label: 'سلسله‌مراتب (Hierarchy)', icon: Workflow, desc: 'نمایش درختی بالا به پایین' },
+    { id: 'graphrag', label: 'گراف دانش سازمانی (GraphRAG)', icon: GitMerge, desc: 'نمایش موجودیت‌ها و روابط خوشه‌بندی شده' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ 

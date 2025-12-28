@@ -6,7 +6,7 @@ import {
     parseFiles, 
     loadChunksFromDB, 
     clearDatabase, 
-    exportDatabaseToJson, 
+    exportDatabaseToBlob, 
     importDatabaseFromJson, 
     saveConversationToDB, 
     loadConversationsFromDB, 
@@ -518,8 +518,9 @@ export const useRAGApplication = () => {
 
     const handleExportDB = async () => {
         try {
-            const jsonString = await exportDatabaseToJson();
-            const blob = new Blob([jsonString], { type: 'application/json' });
+            // Using new blob-optimized export to handle large datasets (18k+ chunks)
+            const blob = await exportDatabaseToBlob();
+            
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -528,8 +529,9 @@ export const useRAGApplication = () => {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-        } catch (e) {
-            alert('خطا در دانلود دیتابیس');
+        } catch (e: any) {
+            console.error("Export DB Error:", e);
+            alert(`خطا در دانلود دیتابیس: ${e.message || 'Unknown Error'}. \n(Console را برای جزئیات چک کنید)`);
         }
     };
 

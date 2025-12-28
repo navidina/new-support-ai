@@ -6,9 +6,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   ollamaBaseUrl: 'http://localhost:11434',
   chatModel: 'aya:8b',
   embeddingModel: 'jeffh/intfloat-multilingual-e5-large-instruct:f32', 
-  chunkSize: 1200,      // Increased to improve context capture (Paragraph based)
-  childChunkSize: 400,  // Adjusted relative to parent
-  chunkOverlap: 200,    // Increased overlap to prevent cutting instructions
+  chunkSize: 1500,      // Increased to 1500 to capture more context
+  childChunkSize: 500,  // Increased for child chunks
+  chunkOverlap: 300,    // Increased overlap to 300 chars to ensure sentence continuity
   temperature: 0.0,     // Keep 0 for max faithfulness
   systemPrompt: `شما یک دستیار هوشمند سازمانی هستید که وظیفه دارید فقط بر اساس "مستندات ارائه شده" به سوالات پاسخ دهید.
 
@@ -30,10 +30,10 @@ const loadSettings = () => {
     if (saved) {
       const parsed = JSON.parse(saved);
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
-      // Override system prompt with the new default to ensure the fix applies even if user has saved settings
-      currentSettings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
-      currentSettings.chunkSize = DEFAULT_SETTINGS.chunkSize;
-      currentSettings.chunkOverlap = DEFAULT_SETTINGS.chunkOverlap;
+      // Force update critical chunking defaults if they match old defaults
+      // This ensures existing users get the benefit without clearing storage
+      if (currentSettings.chunkSize === 1200) currentSettings.chunkSize = 1500;
+      if (currentSettings.chunkOverlap === 200) currentSettings.chunkOverlap = 300;
     }
   } catch (e) {
     console.error("Failed to load settings", e);

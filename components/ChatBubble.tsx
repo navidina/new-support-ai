@@ -5,6 +5,9 @@ import { Message } from '../types';
 import { toPersianDigits } from '../services/textProcessor';
 import RAGVisualization from './RAGVisualization';
 
+// Declare mermaid global
+declare var mermaid: any;
+
 interface ChatBubbleProps {
   message: Message;
   onOptionSelect?: (option: string) => void;
@@ -24,6 +27,20 @@ const categoryLabels: Record<string, string> = {
 };
 
 const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ content, isUser }) => {
+    const mermaidRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!isUser && mermaidRef.current) {
+            try {
+                if (typeof mermaid !== 'undefined') {
+                    mermaid.init(undefined, mermaidRef.current.querySelectorAll('.mermaid'));
+                }
+            } catch (err) {
+                console.error('Mermaid render error:', err);
+            }
+        }
+    }, [content, isUser]);
+
     const renderInline = (text: string) => {
         const parts = text.split(/(\*\*.*?\*\*)/g);
         return parts.map((part, index) => {
@@ -36,6 +53,25 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
 
     // Handle empty content gracefully
     if (!content) return <span className="animate-pulse">|</span>;
+
+    // Check for mermaid blocks
+    if (content.includes('```mermaid')) {
+        const parts = content.split(/```mermaid([\s\S]*?)```/g);
+        return (
+            <div className={`space-y-3 text-[0.93rem] leading-7 ${isUser ? 'text-white' : 'text-slate-700'}`} ref={mermaidRef}>
+                {parts.map((part, i) => {
+                    if (i % 2 === 1) { // Mermaid block
+                        return (
+                            <div key={i} className="mermaid bg-slate-50 p-4 rounded-xl border border-slate-200 overflow-x-auto my-2" dir="ltr">
+                                {part.trim()}
+                            </div>
+                        );
+                    }
+                    return <MarkdownRenderer key={i} content={part} isUser={isUser} />; // Recursively render text parts
+                })}
+            </div>
+        );
+    }
 
     const blocks = content.split(/\n\n+/);
 

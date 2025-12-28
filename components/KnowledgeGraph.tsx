@@ -1,9 +1,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { KnowledgeChunk, GraphNode, GraphLink, GraphLayoutMode } from '../types';
-import { categoryLabels, subCategoryLabels, prepareGraphData, prepareSmartGraphData, prepareSchemaGraphData } from '../services/graphEngine';
-import { Network, ZoomIn, ZoomOut, RefreshCw, Workflow, Share2, Search, X, FileText, Tag, Hash, Calendar, Layers, GitMerge, Link as LinkIcon, Copy, Check, AlignLeft, ChevronDown, ChevronUp, Filter, Lightbulb, CircleDot, BrainCircuit, Box, AlertTriangle, ShieldCheck, Activity } from 'lucide-react';
-import { toPersianDigits } from '../services/textProcessor';
+import { categoryLabels, subCategoryLabels, prepareGraphData, prepareSchemaGraphData, prepareGraphRagData } from '../services/graphEngine';
+import { Network, ZoomIn, ZoomOut, RefreshCw, Workflow, Search, X, Filter, Box } from 'lucide-react';
 
 interface KnowledgeGraphProps {
   chunks: KnowledgeChunk[];
@@ -33,14 +32,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
   const hoverNodeRef = useRef<GraphNode | null>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
-  const toggleCategory = (cat: string) => {
-    const newSet = new Set(visibleCategories);
-    if (newSet.has(cat)) newSet.delete(cat);
-    else newSet.add(cat);
-    setVisibleCategories(newSet);
-    alphaRef.current = 1.0; 
-  };
-
   useEffect(() => {
       alphaRef.current = 1.0;
   }, [layoutMode, searchQuery]);
@@ -53,17 +44,8 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
     }
     alphaRef.current = 1.0; 
     
-    // Switch between Standard, Smart, and Schema Data Prep
-    if (layoutMode === 'smart') {
-        const smartData = prepareSmartGraphData(chunks);
-        simulationData.current = { 
-            nodes: smartData.nodes, 
-            links: smartData.links, 
-            treeLinks: [], 
-            networkLinks: [], 
-            topicLinks: [] 
-        };
-    } else if (layoutMode === 'schema') {
+    // Switch between Schema, GraphRAG, and Tree (Standard)
+    if (layoutMode === 'schema') {
         const schemaData = prepareSchemaGraphData(chunks);
         simulationData.current = {
             nodes: schemaData.nodes,
@@ -72,7 +54,17 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
             networkLinks: [],
             topicLinks: []
         };
+    } else if (layoutMode === 'graphrag') {
+        const ragData = prepareGraphRagData(chunks);
+        simulationData.current = {
+            nodes: ragData.nodes,
+            links: ragData.links,
+            treeLinks: [],
+            networkLinks: [],
+            topicLinks: []
+        };
     } else {
+        // Default (Tree/Hierarchy)
         simulationData.current = prepareGraphData(chunks, visibleCategories);
     }
 
@@ -113,10 +105,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
       let clickedNode: GraphNode | null = null;
       for (let i = simulationData.current.nodes.length - 1; i >= 0; i--) {
           const node = simulationData.current.nodes[i];
-          // Visibility filtering based on mode
-          if (layoutMode === 'topic' && (node.group === 'file')) continue;
-          if (layoutMode !== 'topic' && layoutMode !== 'schema' && node.group === 'topic') continue;
-
           const dist = Math.sqrt((x - node.x)**2 + (y - node.y)**2);
           if (dist < node.radius + 5) { 
               clickedNode = node;
@@ -140,9 +128,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
       let hovered: GraphNode | null = null;
       for (let i = simulationData.current.nodes.length - 1; i >= 0; i--) {
           const node = simulationData.current.nodes[i];
-          if (layoutMode === 'topic' && (node.group === 'file')) continue;
-          if (layoutMode !== 'topic' && layoutMode !== 'schema' && node.group === 'topic') continue;
-
           const dist = Math.sqrt((x - node.x)**2 + (y - node.y)**2);
           if (dist < node.radius + 5) {
               hovered = node;
@@ -156,7 +141,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
       }
 
       if (isDraggingRef.current) {
-          if (dragTargetRef.current && (layoutMode === 'force' || layoutMode === 'network' || layoutMode === 'smart' || layoutMode === 'schema')) {
+          if (dragTargetRef.current && (layoutMode === 'graphrag' || layoutMode === 'schema')) {
               dragTargetRef.current.x = x;
               dragTargetRef.current.y = y;
               dragTargetRef.current.vx = 0;
@@ -192,34 +177,28 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
     if (!canvas || !ctx) return;
 
     const animate = () => {
-      const { nodes, links, treeLinks, networkLinks, topicLinks } = simulationData.current;
+      const { nodes, links, treeLinks } = simulationData.current;
       const { width, height } = dimensions.current;
       const cx = width / 2;
       const cy = height / 2;
       
       let activeLinks = links;
       if (layoutMode === 'tree') activeLinks = treeLinks;
-      if (layoutMode === 'network') activeLinks = networkLinks;
-      if (layoutMode === 'topic') activeLinks = topicLinks;
-      if (layoutMode === 'radial') activeLinks = treeLinks;
-      if (layoutMode === 'smart') activeLinks = links; 
+      if (layoutMode === 'graphrag') activeLinks = links;
       if (layoutMode === 'schema') activeLinks = links;
 
-      const activeNodes = nodes.filter(n => {
-          if (layoutMode === 'topic') return n.group === 'topic' || n.group === 'subCategory' || n.group === 'category' || n.group === 'root';
-          return n.group !== 'topic';
-      });
+      const activeNodes = nodes;
 
       if (!isDraggingRef.current) {
           alphaRef.current *= 0.99; 
           if (alphaRef.current < 0.005) alphaRef.current = 0;
       }
 
-      const isForceMode = layoutMode === 'force' || layoutMode === 'network' || layoutMode === 'smart' || layoutMode === 'schema';
+      const isForceMode = layoutMode === 'graphrag' || layoutMode === 'schema';
       const shouldRunPhysics = isForceMode && alphaRef.current > 0;
 
       const DAMPING = 0.5;
-      const REPULSION = (layoutMode === 'smart' || layoutMode === 'schema') ? 1500 : 800; // Stronger repulsion for Schema/Smart
+      const REPULSION = (layoutMode === 'schema') ? 1500 : 800;
       const TARGET_SPEED = 2;
       const CURRENT_MAX_SPEED = TARGET_SPEED * Math.max(0.1, alphaRef.current);
 
@@ -228,21 +207,12 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
               n.x += (n.treeX - n.x) * 0.1;
               n.y += (n.treeY - n.y) * 0.1;
           } 
-          else if (layoutMode === 'radial' && n.radialX !== undefined && n.radialY !== undefined) {
-              n.x += (n.radialX - n.x) * 0.1;
-              n.y += (n.radialY - n.y) * 0.1;
-          }
-          else if (layoutMode === 'topic' && n.metadata?.topicTreeX !== undefined) {
-              n.x += (n.metadata.topicTreeX - n.x) * 0.1;
-              n.y += (n.metadata.topicTreeY - n.y) * 0.1;
-          }
           else if (shouldRunPhysics) {
              if (!isDraggingRef.current || n !== dragTargetRef.current) {
                  // For Schema view, System nodes are somewhat fixed anchors
-                 if (n.group === 'root' || (layoutMode === 'schema' && n.group === 'System')) {
+                 if (layoutMode === 'schema' && n.group === 'System') {
                     if (n.targetX !== undefined) n.x += (n.targetX - n.x) * 0.05;
                     if (n.targetY !== undefined) n.y += (n.targetY - n.y) * 0.05;
-                    // System nodes still repel others but move less
                  }
                  
                  for (const other of activeNodes) {
@@ -269,7 +239,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
                              const dx = other.x - n.x;
                              const dy = other.y - n.y;
                              const dist = Math.sqrt(dx*dx + dy*dy);
-                             const targetDist = link.type === 'cross' ? 200 : (layoutMode === 'smart' || layoutMode === 'schema' ? 150 : 80);
+                             const targetDist = layoutMode === 'schema' ? 150 : 100;
                              
                              const force = (dist - targetDist) * 0.01; 
                              n.vx += (dx/dist) * force;
@@ -313,16 +283,17 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
       };
 
       // Draw Links
-      ctx.lineWidth = (layoutMode === 'tree' || layoutMode === 'topic' || layoutMode === 'radial') ? 1.5 : 1;
+      ctx.lineWidth = (layoutMode === 'tree') ? 1.5 : 1;
       for (const link of activeLinks) {
           const s = activeNodes.find(n => n.id === link.source);
           const t = activeNodes.find(n => n.id === link.target);
           if (s && t) {
-              if (layoutMode !== 'tree' && layoutMode !== 'topic' && layoutMode !== 'radial' && layoutMode !== 'smart' && layoutMode !== 'schema' && (s.group === 'root' || t.group === 'root')) continue;
+              // Hide root links in GraphRAG for cleaner look unless explicitly connected
+              if (layoutMode === 'graphrag' && (s.group === 'root' || t.group === 'root')) continue;
 
-              let opacity = (layoutMode === 'tree' || layoutMode === 'topic' || layoutMode === 'radial') ? 0.3 : 0.15; 
+              let opacity = layoutMode === 'tree' ? 0.3 : 0.15; 
               if (link.type === 'cross') opacity = 0.4;
-              if (layoutMode === 'smart' || layoutMode === 'schema') opacity = 0.2;
+              if (layoutMode === 'schema') opacity = 0.2;
 
               const sDim = shouldDim(s);
               const tDim = shouldDim(t);
@@ -343,9 +314,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
               } else if (link.type === 'CAUSED_BY') {
                   ctx.strokeStyle = `rgba(239, 68, 68, ${opacity})`; // Red for causes
                   ctx.setLineDash([2, 2]);
-              } else if (link.type === 'cross') {
-                  ctx.setLineDash([5, 5]);
-                  ctx.strokeStyle = `rgba(234, 179, 8, ${opacity})`; 
               } else {
                   ctx.setLineDash([]);
                   ctx.strokeStyle = `rgba(148, 163, 184, ${opacity})`;
@@ -361,7 +329,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
 
       // Draw Nodes
       for (const node of activeNodes) {
-          if (layoutMode !== 'tree' && layoutMode !== 'topic' && layoutMode !== 'radial' && layoutMode !== 'smart' && layoutMode !== 'schema' && node.group === 'root') continue;
+          if (layoutMode !== 'tree' && node.group === 'root') continue;
 
           let opacity = 1;
           if (shouldDim(node)) opacity = 0.1;
@@ -420,6 +388,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
             (node.group === 'Issue' && transform.k > 0.5) ||
             (node.group === 'Action' && transform.k > 0.5) ||
             (node.group === 'Module' && transform.k > 0.5) ||
+            (node.group === 'Concept' && transform.k > 0.6) ||
             (node === hoverNodeRef.current) || 
             (node === selectedNode) ||
             isMatch(node);
@@ -502,7 +471,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
 
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/90 backdrop-blur p-2 rounded-lg shadow-lg border border-slate-200">
         
-        {layoutMode !== 'smart' && layoutMode !== 'schema' && (
+        {layoutMode === 'tree' && (
             <>
                 <button 
                     onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)} 
@@ -541,24 +510,24 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode }) =
                      <span className="w-3 h-3 bg-emerald-500 border border-white shadow-sm"></span>
                      <span>راه‌حل (Action)</span>
                  </div>
-                 <div className="flex items-center gap-2 mb-1">
-                     <span className="w-6 border-b-2 border-emerald-500"></span>
-                     <span>حل می‌کند (Solves)</span>
-                 </div>
-                 <div className="flex items-center gap-2 mb-1">
-                     <span className="w-6 border-b-2 border-dashed border-red-500"></span>
-                     <span>ناشی از (Caused By)</span>
-                 </div>
              </>
-         ) : layoutMode === 'smart' ? (
+         ) : layoutMode === 'graphrag' ? (
              <>
                  <div className="flex items-center gap-2 mb-2">
-                     <span className="w-3 h-3 rounded-full bg-pink-500 border border-white shadow-sm"></span>
-                     <span>مفاهیم کلیدی (استخراج خودکار)</span>
+                     <span className="w-3 h-3 rounded-full bg-blue-600 border border-white shadow-sm"></span>
+                     <span>موجودیت سیستم (Entity)</span>
                  </div>
                  <div className="flex items-center gap-2 mb-2">
-                     <span className="w-3 h-3 rounded-full bg-slate-400 border border-white shadow-sm"></span>
-                     <span>سند مرتبط</span>
+                     <span className="w-3 h-3 rounded-full bg-emerald-500 border border-white shadow-sm"></span>
+                     <span>مفهوم/دسته (Concept)</span>
+                 </div>
+                 <div className="flex items-center gap-2 mb-2">
+                     <span className="w-3 h-3 rounded-full bg-red-500 border border-white shadow-sm"></span>
+                     <span>خطا/مشکل (Error)</span>
+                 </div>
+                 <div className="flex items-center gap-2 mb-1">
+                     <span className="w-6 border-b-2 border-slate-400"></span>
+                     <span>رابطه معنایی (Relation)</span>
                  </div>
              </>
          ) : (

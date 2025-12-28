@@ -108,10 +108,12 @@ export const cleanAndNormalizeText = (text: string): string => {
     // 4. Normalize Numbers
     .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728)) 
     // 5. Intelligent Punctuation Removal (Keep structure chars like : - . )
+    // Don't remove sentence stoppers like . ! ? ؟
     .replace(/[!$%^&*;={}_`~()«»"<>\[\]]/g, " ") 
     // 6. Structure Normalization
     .replace(/\r\n/g, '\n')
-    .replace(/(\d+)[-.)]\s*/g, '\n$1. ') 
+    // Fix list numbering stuck to text: "1.Text" -> "\n1. Text"
+    .replace(/(\n|^)(\d+)[-.)](?!\s)/g, '$1$2. ')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n\s*\n/g, '\n\n') // Ensure paragraphs are preserved
     .trim();
@@ -280,83 +282,125 @@ export const splitIntoSentences = (text: string): string[] => {
 };
 
 /**
- * Robust Chunking Logic.
- * 1. Primary split by double newlines (paragraphs).
- * 2. If a paragraph is too big, split by sentences.
- * 3. Accumulate paragraphs until targetSize is reached.
+ * Intelligent Recursive Character Text Splitter.
+ * This function tries to split text by high-priority separators first (paragraphs),
+ * then medium (sentences), then low (words), to ensure semantic integrity.
+ * It also maintains an "Overlap" window to prevent cutting context at boundaries.
  */
-export const smartChunking = (text: string, targetSize?: number, overlapSize?: number): string[] => {
+export const intelligentChunking = (text: string, targetSize?: number, overlapSize?: number): string[] => {
     const settings = getSettings();
-    const effectiveTarget = targetSize || settings.chunkSize;
-    const effectiveOverlap = overlapSize || settings.chunkOverlap;
+    const chunkSize = targetSize || settings.chunkSize;
+    const overlap = overlapSize || settings.chunkOverlap;
 
-    // 1. Split by Paragraphs first (Double newline)
-    const paragraphs = text.split(/\n\s*\n/);
-    const chunks: string[] = [];
-    
-    let currentChunk: string = "";
-    
-    for (const para of paragraphs) {
-        if (!para.trim()) continue;
-        
-        // If adding this paragraph exceeds target size
-        if (currentChunk.length + para.length > effectiveTarget) {
-            // Push current accumulated chunk if it exists
-            if (currentChunk) {
-                chunks.push(currentChunk.trim());
+    if (!text) return [];
+    if (text.length <= chunkSize) return [text];
+
+    // Priority list of separators
+    const separators = [
+        "\n\n", // Paragraphs
+        "\n",   // Lines
+        ". ", "؟ ", "! ", "; ", "؛ ", // Sentences
+        " "     // Words
+    ];
+
+    // Recursive splitter function
+    const splitText = (currentText: string, sepIndex: number): string[] => {
+        // Base case: text fits
+        if (currentText.length <= chunkSize) {
+            return [currentText.trim()];
+        }
+
+        // Fallback: If no separators left, hard slice
+        if (sepIndex >= separators.length) {
+            const chunks: string[] = [];
+            for (let i = 0; i < currentText.length; i += (chunkSize - overlap)) {
+                chunks.push(currentText.slice(i, i + chunkSize));
             }
-            
-            // Prepare overlap for the next chunk
-            const overlapText = currentChunk.slice(-effectiveOverlap);
-            
-            // Handle Massive Paragraphs: If the paragraph itself is huge (> target)
-            if (para.length > effectiveTarget) {
-                // Split massive paragraph by sentences
-                const sentences = splitIntoSentences(para);
-                let subChunk = overlapText; 
-                
-                for (const sent of sentences) {
-                    if (subChunk.length + sent.length > effectiveTarget) {
-                        chunks.push(subChunk.trim());
-                        subChunk = subChunk.slice(-effectiveOverlap) + sent;
-                    } else {
-                        subChunk += sent;
-                    }
+            return chunks;
+        }
+
+        const separator = separators[sepIndex];
+        let splits: string[] = [];
+
+        // Special handling for punctuation to keep it attached to the sentence
+        if (['. ', '؟ ', '! ', '; ', '؛ '].includes(separator)) {
+            // Split but re-attach separator to the preceding part
+            const tempSplits = currentText.split(separator);
+            for (let i = 0; i < tempSplits.length; i++) {
+                // Add separator back to all except the last one (unless text ended with it)
+                if (i < tempSplits.length - 1) {
+                    splits.push(tempSplits[i] + separator.trim());
+                } else {
+                    splits.push(tempSplits[i]);
                 }
-                currentChunk = subChunk;
-            } else {
-                // Start new chunk with overlap + current paragraph
-                currentChunk = overlapText + "\n\n" + para;
             }
         } else {
-            // Append paragraph
-            currentChunk += (currentChunk ? "\n\n" : "") + para;
+            splits = currentText.split(separator);
         }
-    }
-    
-    if (currentChunk) {
-        chunks.push(currentChunk.trim());
-    }
 
-    // Fallback: If no newlines were found and text is huge, force split
-    if (chunks.length === 0 && text.length > effectiveTarget) {
-        const sentences = splitIntoSentences(text);
-        let subChunk = "";
-        for (const sent of sentences) {
-             if (subChunk.length + sent.length > effectiveTarget) {
-                chunks.push(subChunk.trim());
-                subChunk = subChunk.slice(-effectiveOverlap) + sent;
+        // If split didn't reduce size (e.g. no paragraphs found), try next separator
+        if (splits.length === 1) {
+            return splitText(currentText, sepIndex + 1);
+        }
+
+        // Merge Logic with Overlap
+        const finalChunks: string[] = [];
+        let currentDoc: string[] = [];
+        let totalLen = 0;
+
+        for (const split of splits) {
+            const splitLen = split.length;
+            
+            // If adding this piece exceeds chunk size
+            if (totalLen + splitLen > chunkSize) {
+                // 1. Push current accumulated chunk
+                if (totalLen > 0) {
+                    const doc = currentDoc.join(separator === " " ? " " : separator.includes("\n") ? separator : " ");
+                    if (doc.trim()) finalChunks.push(doc.trim());
+
+                    // 2. Handle Overlap (Backtracking)
+                    // Remove items from start of currentDoc until it's small enough to form the overlap
+                    // We want to keep approximately 'overlap' characters from the END of currentDoc
+                    while (totalLen > overlap && currentDoc.length > 0) {
+                        const removed = currentDoc.shift();
+                        if (removed) {
+                            totalLen -= (removed.length + (currentDoc.length > 0 ? separator.length : 0));
+                        }
+                    }
+                }
+
+                // If the split ITSELF is larger than chunk size, recurse on it
+                if (splitLen > chunkSize) {
+                    const subChunks = splitText(split, sepIndex + 1);
+                    finalChunks.push(...subChunks);
+                    // Reset
+                    currentDoc = [];
+                    totalLen = 0;
+                } else {
+                    // Start new chunk with remaining overlap + current split
+                    currentDoc.push(split);
+                    totalLen += splitLen + (currentDoc.length > 1 ? separator.length : 0);
+                }
             } else {
-                subChunk += sent;
+                currentDoc.push(split);
+                totalLen += splitLen + (currentDoc.length > 1 ? separator.length : 0);
             }
         }
-        if (subChunk) chunks.push(subChunk.trim());
-    } else if (chunks.length === 0) {
-        chunks.push(text);
-    }
 
-    return chunks.filter(c => c.length > 50);
+        // Add remaining
+        if (currentDoc.length > 0) {
+            const doc = currentDoc.join(separator === " " ? " " : separator.includes("\n") ? separator : " ");
+            if (doc.trim()) finalChunks.push(doc.trim());
+        }
+
+        return finalChunks;
+    };
+
+    return splitText(text, 0);
 };
+
+// Renamed for backward compatibility if needed, but we replace the logic
+export const smartChunking = intelligentChunking;
 
 /**
  * IMPROVED: Header-Aware Markdown Chunking (Section Accumulation).
@@ -386,8 +430,8 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
         if (currentSectionContent.length + contextHeader.length <= effectiveTarget * 1.5) { // Allow slight overflow for cohesion
              chunks.push((contextHeader + currentSectionContent).trim());
         } else {
-             // If section is HUGE (e.g. 40 pages under one header), use smartChunking
-             const subChunks = smartChunking(currentSectionContent, effectiveTarget, effectiveOverlap);
+             // If section is HUGE, use intelligentChunking on it
+             const subChunks = intelligentChunking(currentSectionContent, effectiveTarget, effectiveOverlap);
              subChunks.forEach(sc => {
                  chunks.push((contextHeader + sc).trim());
              });
@@ -423,7 +467,7 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
 
     // Fallback if regex failed completely (no headers found)
     if (chunks.length === 0 && text.trim().length > 0) {
-        return smartChunking(text, effectiveTarget, effectiveOverlap);
+        return intelligentChunking(text, effectiveTarget, effectiveOverlap);
     }
 
     return chunks;
@@ -432,7 +476,7 @@ export const chunkMarkdown = (text: string, targetSize?: number, overlap?: numbe
 export const chunkWhole = (text: string): string[] => {
     const settings = getSettings();
     if (text.length < settings.chunkSize) return [text];
-    return smartChunking(text, settings.chunkSize, settings.chunkOverlap);
+    return intelligentChunking(text, settings.chunkSize, settings.chunkOverlap);
 };
 
 export const chunkQA = (text: string): string[] => {
@@ -450,7 +494,7 @@ export const chunkQA = (text: string): string[] => {
     }
     
     if (!found) {
-        return smartChunking(text);
+        return intelligentChunking(text);
     }
 
     return chunks;

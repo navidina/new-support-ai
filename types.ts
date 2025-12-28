@@ -100,7 +100,7 @@ export interface DocumentStatus {
 }
 
 export type ViewMode = 'chat' | 'graph';
-export type GraphLayoutMode = 'schema' | 'smart' | 'force' | 'radial' | 'topic' | 'tree' | 'network';
+export type GraphLayoutMode = 'schema' | 'smart' | 'force' | 'radial' | 'topic' | 'tree' | 'network' | 'graphrag';
 
 export type SchemaEntityType = 'System' | 'Issue' | 'Action' | 'Module' | 'Concept' | 'Role';
 
