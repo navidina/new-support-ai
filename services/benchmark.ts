@@ -1,8 +1,8 @@
 
-import { BenchmarkCase, BenchmarkResult, KnowledgeChunk } from '../types';
+import { BenchmarkCase, BenchmarkResult, KnowledgeChunk, SearchOverrides, TuningStepResult } from '../types';
 import { processQuery, cosineSimilarity } from './search';
 import { getEmbedding, preWarmModel } from './ollama';
-import { getSettings } from './settings';
+import { getSettings, updateSettings } from './settings';
 
 // Extended Persian Stop Words to ignore during keyword extraction
 const PERSIAN_STOP_WORDS = new Set([
@@ -165,7 +165,8 @@ JSON:
 export const runBenchmark = async (
     testCases: BenchmarkCase[], 
     knowledgeBase: KnowledgeChunk[],
-    onProgress: (current: number, total: number, lastResult: BenchmarkResult) => void
+    onProgress: (current: number, total: number, lastResult: BenchmarkResult) => void,
+    searchOverrides?: SearchOverrides
 ): Promise<void> => {
     
     // 1. PRE-WARM MODEL
@@ -178,16 +179,16 @@ export const runBenchmark = async (
         // Small delay to prevent UI freezing
         if (i > 0) await new Promise(resolve => setTimeout(resolve, 50));
 
-        // Call processQuery
-        // We temporarily lower minConfidence via the setting override if possible, 
-        // but here we rely on the logic inside processQuery.
+        // Call processQuery with optional Overrides
         const result = await processQuery(
             testCase.question, 
             knowledgeBase,
             undefined, 
             undefined, 
-            1,         
-            false      
+            searchOverrides?.temperature,         
+            false,
+            [],
+            searchOverrides
         );
         
         // Fail Fast on Critical Errors
@@ -282,4 +283,74 @@ export const runBenchmark = async (
 
         onProgress(i + 1, testCases.length, benchmarkResult);
     }
+};
+
+/**
+ * AUTO-TUNER: HYPERPARAMETER OPTIMIZATION LOOP
+ * Tries different strategies until it hits 85% score.
+ * UPDATED: Runs on the FULL Dataset provided as requested.
+ */
+export const runAutoTuneBenchmark = async (
+    testCases: BenchmarkCase[],
+    knowledgeBase: KnowledgeChunk[],
+    onStep: (stepResult: TuningStepResult) => void
+): Promise<SearchOverrides | null> => {
+    
+    // Define Strategy Space
+    const strategies: SearchOverrides[] = [
+        { strategyName: 'حالت استاندارد (Balanced)', minConfidence: 0.15, temperature: 0.0, vectorWeight: 0.8 },
+        { strategyName: 'حالت دقیق (Precision Mode)', minConfidence: 0.25, temperature: 0.0, vectorWeight: 0.9 }, // High Confidence, Low Temp
+        { strategyName: 'حالت خلاق (Creative Mode)', minConfidence: 0.12, temperature: 0.3, vectorWeight: 0.7 }, // Allow more context, higher temp
+        { strategyName: 'تمرکز بر کلمات کلیدی (Keyword Heavy)', minConfidence: 0.10, temperature: 0.1, vectorWeight: 0.4 }, // Low vector weight
+        { strategyName: 'جستجوی عمیق (Deep Search)', minConfidence: 0.05, temperature: 0.0, vectorWeight: 0.6 } // Very permissive retrieval
+    ];
+
+    console.log(`Starting Auto-Tuner on FULL dataset (${testCases.length} items)...`);
+
+    let bestConfig: SearchOverrides | null = null;
+    let bestScore = 0;
+
+    for (const strategy of strategies) {
+        const results: number[] = [];
+        const logs: string[] = [`Testing Strategy: ${strategy.strategyName}`];
+        
+        logs.push(`Params: Conf=${strategy.minConfidence}, Temp=${strategy.temperature}, VecWeight=${strategy.vectorWeight}`);
+
+        // Run Benchmark on ALL provided cases
+        await runBenchmark(testCases, knowledgeBase, (curr, total, res) => {
+            results.push(res.similarityScore);
+        }, strategy);
+
+        const avgScore = results.reduce((a, b) => a + b, 0) / results.length;
+        logs.push(`Result Score: ${(avgScore * 100).toFixed(1)}%`);
+
+        const passed = avgScore >= 0.85;
+        
+        onStep({
+            strategyName: strategy.strategyName || 'Unknown',
+            config: strategy,
+            score: avgScore,
+            pass: passed,
+            logs: logs
+        });
+
+        if (avgScore > bestScore) {
+            bestScore = avgScore;
+            bestConfig = strategy;
+        }
+
+        if (passed) {
+            // WINNER FOUND!
+            // Apply settings globally including vectorWeight
+            updateSettings({ 
+                minConfidence: strategy.minConfidence,
+                temperature: strategy.temperature,
+                vectorWeight: strategy.vectorWeight
+            });
+            return strategy;
+        }
+    }
+
+    // If loop finishes without hitting 85%, return best attempt
+    return bestConfig;
 };

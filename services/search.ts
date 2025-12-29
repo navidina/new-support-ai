@@ -1,17 +1,17 @@
-import { KnowledgeChunk, Source, DebugInfo, QueryResult, PipelineData, Message } from '../types';
+
+import { KnowledgeChunk, Source, DebugInfo, QueryResult, PipelineData, Message, SearchOverrides } from '../types';
 import { getEmbedding } from './ollama';
 import { getSettings } from './settings';
 import { PERSIAN_SYNONYMS } from './synonymsData';
 import { cleanAndNormalizeText } from './textProcessor'; 
 
 const PERSIAN_STOP_WORDS = new Set([
-    'از', 'به', 'با', 'برای', 'در', 'هم', 'و', 'که', 'را', 'این', 'آن', 'است', 'هست', 'بود', 'شد', 'می', 'نمی', 
-    'یک', 'تا', 'بر', 'یا', 'نیز', 'باید', 'شاید', 'اما', 'اگر', 'چرا', 'چه', 'روی', 'زیر', 'های', 'ها', 'تر', 'ترین',
+    'از', 'به', 'با', 'برای', 'در', 'هم', 'و', 'که', 'را', 'این', 'آن', 'است', 'هست', 'بود', 'شد', 'می', 
+    'یک', 'تا', 'بر', 'یا', 'نیز', 'باید', 'شاید', 'اما', 'اگر', 'روی', 'زیر', 'های', 'ها', 'تر', 'ترین',
     'کند', 'کنند', 'کرده', 'داشت', 'دارد', 'شود', 'میشود', 'نشود', 'باعث', 'مورد', 'جهت', 'توسط', 'بنابراین', 'سپس',
-    'ولی', 'لیکن', 'چون', 'چنانچه', 'آیا', 'بله', 'خیر', 'لطفا', 'ممنون', 'متشکرم', 'بی‌زحمت', 'سلام', 'خسته', 'نباشید',
-    'چیست', 'کی', 'کجا', 'کدام', 
-    'توضیح', 'بده', 'بگو', 'چی', 'هستش', 'انجام',
-    'رو', 'میشه', 'لطفاً', 'تفاوتش', 'فرقش', 'چیه', 'کدومه', 'بگید', 'بفرمایید',
+    'ولی', 'لیکن', 'چون', 'چنانچه', 'لطفا', 'ممنون', 'متشکرم', 'بی‌زحمت', 'سلام', 'خسته', 'نباشید',
+    'توضیح', 'بده', 'بگو', 'هستش', 'انجام',
+    'رو', 'میشه', 'لطفاً', 'بگید', 'بفرمایید',
     'بیزحمت'
 ]);
 
@@ -24,7 +24,8 @@ const DOMAIN_KEYWORDS = new Set([
     'ستون', 'فیلد', 'پارامتر', 'فیلتر', 'خروجی', 'اکسل', 'چاپ', 'نمودار',
     'ایمیل', 'ارسال', 'nav', 'etf', 'prx', 'dps', 'ip', 'تغییر',
     'شعبه', 'باجه', 'کارگزار', 'سرخط', 'سرخطی', 'حراج', 'فریز', 'page', 'offset', 'api',
-    'نمایندگی', 'دسترسی', 'مجوز', 'روش', 'نحوه', 'مراحل', 't+1', 't+2'
+    'نمایندگی', 'دسترسی', 'مجوز', 'روش', 'نحوه', 'مراحل', 't+1', 't+2',
+    'خطا', 'ارور', 'error', 'باگ', 'مشکل'
 ]);
 
 const normalizeForSearch = (text: string): string => {
@@ -126,7 +127,6 @@ Output (terms only):
 
 /**
  * Generates multiple diverse search queries to cover semantic gaps.
- * Used when initial search fails.
  */
 const generateMultiQueries = async (originalQuery: string): Promise<string[]> => {
     const settings = getSettings();
@@ -151,7 +151,7 @@ Output Format: Just 3 lines of Persian queries. No numbering.
                 model: settings.chatModel,
                 stream: false,
                 messages: [{ role: 'user', content: prompt }],
-                options: { temperature: 0.7 } // Higher temp for diversity
+                options: { temperature: 0.7 } 
             }),
         });
         if (!response.ok) return [originalQuery];
@@ -181,7 +181,7 @@ export const extractCriticalTerms = (query: string): string[] => {
     const tokens = normalizedQuery.split(/\s+/);
     tokens.forEach(token => {
         if (PERSIAN_STOP_WORDS.has(token)) return;
-        if (DOMAIN_KEYWORDS.has(token) || token.length >= 4) { 
+        if (DOMAIN_KEYWORDS.has(token) || token.length >= 3) { 
             terms.push(token);
         }
     });
@@ -189,71 +189,68 @@ export const extractCriticalTerms = (query: string): string[] => {
     return [...new Set(terms)]; 
 };
 
-// Original Keyword Scorer (Used for initial retrieval)
-export const calculateKeywordScore = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
+// Calculates Keyword Density (0.0 to 1.0)
+export const calculateKeywordDensity = (chunk: KnowledgeChunk, terms: string[]): number => {
     if (terms.length === 0) return 0;
     
     const contentStr = (chunk.searchContent + " " + chunk.content).toLowerCase();
     const normalizedContent = normalizeForSearch(contentStr);
-    const normalizedQuery = normalizeForSearch(query).toLowerCase();
 
-    let score = 0;
     let matchedTermsCount = 0;
-    
     terms.forEach(term => {
         if (normalizedContent.includes(term.toLowerCase())) {
             matchedTermsCount++;
         }
     });
     
-    if (matchedTermsCount > 0) {
-        score += (matchedTermsCount / terms.length) * 0.6;
-    }
-    
-    if (matchedTermsCount === terms.length && terms.length > 1) {
-        score += 0.3;
-    }
-
-    const words = normalizedQuery.split(' ').filter(w => w.length > 2);
-    for (let i = 0; i < words.length - 1; i++) {
-        const biGram = words[i] + " " + words[i+1];
-        if (normalizedContent.includes(biGram)) {
-            score += 0.3;
-        }
-    }
-
-    return score; 
+    return matchedTermsCount / terms.length;
 };
 
-// --- RE-RANKING ALGORITHM ---
-// This acts as a precise filter after the initial vector retrieval.
-export const calculateAdvancedScore = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
+// --- RE-RANKING ALGORITHM (NORMALIZED) ---
+// Returns a boost factor between 0.0 and 0.5 (additive), NOT integer values like 8.0
+export const calculateAdvancedScoreBoost = (chunk: KnowledgeChunk, terms: string[], query: string): number => {
     const content = normalizeForSearch(chunk.content + " " + chunk.searchContent);
-    let score = 0;
+    let boost = 0.0;
     
-    // 1. Exact Match Bonus for Critical Identifiers (e.g., Error Codes, Ticket IDs)
+    // 1. Exact Match for Critical Identifiers (e.g., Error Codes, Ticket IDs)
+    // This is the only case where we allow a massive override, but handled via a flag in main process.
+    // Here we just give a strong boost.
     const errorCodes = query.match(/\d{3,}/g);
+    let hasExactIdMatch = false;
     if (errorCodes) {
         errorCodes.forEach(code => {
-            if (content.includes(code)) score += 5.0; // Huge boost for exact ID match
+            if (content.includes(code)) {
+                hasExactIdMatch = true;
+            }
         });
     }
+    
+    if (hasExactIdMatch) return 0.5; // Max boost for ID match
 
-    // 2. Term Density Check
-    if (terms.length === 0) return 0.5; // Neutral if no critical terms
+    // 2. Keyword Density Boost
+    if (terms.length === 0) return 0.0;
 
     let foundTerms = 0;
+    let foundDomainTerms = 0;
+
     terms.forEach(term => {
-        if (content.includes(term.toLowerCase())) foundTerms++;
+        if (content.includes(term.toLowerCase())) {
+            foundTerms++;
+            if (DOMAIN_KEYWORDS.has(term)) {
+                foundDomainTerms++;
+            }
+        }
     });
     
-    // Relaxed Scoring: Removed strict 0.4 threshold.
-    // Instead, we just award points. Vector score will handle semantic matches.
-    if (foundTerms > 0) {
-        score += (foundTerms / terms.length) * 1.5;
-    }
+    const density = foundTerms / terms.length;
+    
+    // Linearly map density 0..1 to boost 0..0.3
+    boost += density * 0.3;
 
-    return score;
+    // Small bonus for domain specific terms
+    if (foundDomainTerms > 0) boost += 0.05;
+
+    return boost;
 };
 
 export const cosineSimilarity = (vecA: number[], vecB: number[]): number => {
@@ -287,8 +284,11 @@ const executeSearchPass = async (
         if (chunk.embedding) {
             vectorScore = cosineSimilarity(mainVec, chunk.embedding);
         }
-        const kwScore = calculateKeywordScore(chunk, criticalTerms, synonymExpandedQuery);
-        return { id: chunk.id, chunk, vectorScore, kwScore };
+        
+        // Calculate raw density for initial sort
+        const density = calculateKeywordDensity(chunk, criticalTerms);
+        
+        return { id: chunk.id, chunk, vectorScore, density };
     });
 
     return { scoredChunks, criticalTerms, expandedQuery: synonymExpandedQuery };
@@ -304,10 +304,17 @@ export const processQuery = async (
     categoryFilter?: string,
     temperatureOverride?: number,
     useWebSearch: boolean = false,
-    history: Message[] = []
+    history: Message[] = [],
+    searchOverrides?: SearchOverrides
 ): Promise<QueryResult> => {
     const settings = getSettings();
     const startTime = Date.now();
+
+    // Configuration Merging
+    const effectiveMinConfidence = searchOverrides?.minConfidence ?? settings.minConfidence;
+    const effectiveTemperature = searchOverrides?.temperature ?? temperatureOverride ?? settings.temperature;
+    const effectiveVectorWeight = searchOverrides?.vectorWeight ?? settings.vectorWeight ?? 0.8; 
+    const effectiveKeywordWeight = 1.0 - effectiveVectorWeight;
 
     // 1. Analyze and Rewrite Query
     onProgress?.({ step: 'analyzing', processingTime: Date.now() - startTime });
@@ -322,28 +329,34 @@ export const processQuery = async (
 
     let { scoredChunks, criticalTerms, expandedQuery } = await executeSearchPass(effectiveQuery, knowledgeBase, categoryFilter);
 
-    // 3. Rank & Filter (TWO-STAGE PROCESS)
+    // 3. Rank & Filter (NORMALIZED SCORING)
     
-    // Stage A: Initial Retrieval (Recall)
-    // Get top 30 candidates based primarily on Vector score to ensure we don't miss semantic matches.
-    let initialCandidates = scoredChunks.map(item => {
-        // Initial score: Vector (80%) + Keyword (20%)
-        const initialScore = (item.vectorScore * 0.8) + (item.kwScore * 0.2);
-        return { ...item, initialScore };
-    }).sort((a, b) => b.initialScore - a.initialScore).slice(0, 30);
-
-    // Stage B: Re-ranking (Precision)
-    let ranked = initialCandidates.map(item => {
-        const advScore = calculateAdvancedScore(item.chunk, criticalTerms, effectiveQuery);
+    let ranked = scoredChunks.map(item => {
+        const boost = calculateAdvancedScoreBoost(item.chunk, criticalTerms, effectiveQuery);
         
-        // Final Score combines Vector accuracy with Term Density
-        // Removed hard filter for 0 advScore to allow semantic matches to survive
-        const finalScore = item.vectorScore + advScore;
+        // Weighted Score Formula:
+        // Score = (Vector * W_v) + (KeywordDensity * W_k) + Boost
+        // Boost is capped at 0.5 max.
+        
+        let weightedScore = (item.vectorScore * effectiveVectorWeight) + (item.density * effectiveKeywordWeight);
+        
+        // Special Case: Semantic Mismatch Protection
+        // If vector score is very low (e.g., < 0.25), keywords might be misleading (homonyms).
+        // Only allow boost if vector score indicates *some* relevance, OR if it's an exact ID match (boost=0.5).
+        if (item.vectorScore < 0.25 && boost < 0.4) {
+             weightedScore *= 0.5; // Penalize mismatch
+        } else {
+             weightedScore += boost;
+        }
+
+        // Hard Clamp to 1.0 to prevent "200% confidence"
+        const finalScore = Math.min(1.0, Math.max(0, weightedScore));
+
         return { ...item, finalScore };
     })
     .sort((a, b) => b.finalScore - a.finalScore);
 
-    let topCandidates = ranked.filter(r => r.finalScore >= settings.minConfidence);
+    let topCandidates = ranked.filter(r => r.finalScore >= effectiveMinConfidence);
 
     // 4. Fallback Strategy: Multi-Query
     if (topCandidates.length === 0) {
@@ -358,11 +371,12 @@ export const processQuery = async (
             const altResult = await executeSearchPass(altQ, knowledgeBase, categoryFilter);
             
             const altRanked = altResult.scoredChunks.map(item => {
-                 const advScore = calculateAdvancedScore(item.chunk, altResult.criticalTerms, altQ);
-                 const initialScore = (item.vectorScore * 0.8) + (item.kwScore * 0.2);
-                 return { ...item, initialScore, finalScore: item.vectorScore + advScore };
+                 const boost = calculateAdvancedScoreBoost(item.chunk, altResult.criticalTerms, altQ);
+                 const weightedScore = (item.vectorScore * effectiveVectorWeight) + (item.density * effectiveKeywordWeight);
+                 const finalScore = Math.min(1.0, weightedScore + boost);
+                 return { ...item, finalScore };
             })
-            .filter(r => r.finalScore >= settings.minConfidence)
+            .filter(r => r.finalScore >= effectiveMinConfidence)
             .sort((a, b) => b.finalScore - a.finalScore)
             .slice(0, 3); 
             
@@ -375,19 +389,21 @@ export const processQuery = async (
         topCandidates.sort((a, b) => b.finalScore - a.finalScore);
     }
 
+    const selectedChunks = topCandidates.slice(0, 8);
+
     onProgress?.({ 
         step: 'searching', 
-        retrievedCandidates: topCandidates.slice(0, 5).map(c => ({ title: c.chunk.source.id, score: c.finalScore, accepted: true })),
+        retrievedCandidates: selectedChunks.map(c => ({ title: c.chunk.source.id, score: c.finalScore, accepted: true })),
         extractedKeywords: criticalTerms,
         processingTime: Date.now() - startTime 
     });
 
     if (topCandidates.length === 0) {
         return {
-            text: "متاسفانه اطلاعاتی در مورد سوال شما در مستندات یافت نشد.",
+            text: "متاسفانه اطلاعاتی در مورد سوال شما در مستندات یافت نشد. لطفاً سوال را با جزئیات بیشتری بپرسید.",
             sources: [],
             debugInfo: {
-                strategy: 'No Matches',
+                strategy: searchOverrides?.strategyName || 'No Matches',
                 processingTimeMs: Date.now() - startTime,
                 candidateCount: 0,
                 logicStep: 'Search yielded zero results above threshold',
@@ -396,22 +412,30 @@ export const processQuery = async (
         };
     }
 
-    const selectedChunks = topCandidates.slice(0, 5);
     const contextText = selectedChunks.map(c => 
-        `[منبع: ${c.chunk.source.id}]\n${c.chunk.content}`
+        `[منبع: ${c.chunk.source.id} | صفحه: ${c.chunk.source.page}]\n${c.chunk.content}`
     ).join('\n\n');
 
     // 5. Generate Answer
     onProgress?.({ step: 'generating', processingTime: Date.now() - startTime });
 
-    const systemPrompt = settings.systemPrompt;
+    const systemPrompt = `
+تو یک دستیار پشتیبانی فنی دقیق و حرفه‌ای برای نرم‌افزارهای مالی و بورس هستی.
+دستورالعمل‌های حیاتی:
+۱. فقط و فقط بر اساس "مستندات ارائه شده" پاسخ بده. از دانش قبلی خودت استفاده نکن.
+۲. اگر پاسخ در متن نیست، صریحاً بگو "اطلاعاتی در مستندات یافت نشد". هرگز حدس نزن.
+۳. اعداد، کدهای خطا، فرمول‌ها و مسیرهای منو را عیناً و بدون تغییر ذکر کن.
+۴. اگر سوال در مورد "لیست" یا "انواع" است، تمام موارد موجود در متن را نام ببر.
+۵. پاسخ باید به زبان فارسی روان، فنی و بدون حاشیه باشد.
+`;
+    
     const userPrompt = `
 سوال کاربر: ${query}
 
-مستندات یافت شده:
+مستندات یافت شده (مرتبط‌ترین بخش‌ها):
 ${contextText}
 
-با توجه به مستندات بالا، به سوال پاسخ دهید.
+با توجه دقیق به مستندات بالا، به سوال پاسخ دهید. اگر مطمئن نیستید، بگویید نمی‌دانم.
 `;
 
     try {
@@ -426,7 +450,7 @@ ${contextText}
                     { role: 'user', content: userPrompt }
                 ],
                 options: { 
-                    temperature: temperatureOverride ?? settings.temperature 
+                    temperature: effectiveTemperature
                 }
             }),
         });
@@ -442,10 +466,10 @@ ${contextText}
             text: generatedText,
             sources: selectedChunks.map(c => c.chunk.source),
             debugInfo: {
-                strategy: 'RAG (Re-ranked)',
+                strategy: searchOverrides?.strategyName || 'RAG (Hybrid Normalized)',
                 processingTimeMs: Date.now() - startTime,
                 candidateCount: topCandidates.length,
-                logicStep: 'Answer generated from top candidates',
+                logicStep: 'Answer generated from top 8 chunks',
                 extractedKeywords: criticalTerms
             }
         };

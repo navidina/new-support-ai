@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Play, Award, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, FileText, BarChart2, Download, Trash2, History, Upload, FileType, Database, ThumbsUp, ThumbsDown, ShieldCheck, Target, Ticket, MessageSquare } from 'lucide-react';
-import { BenchmarkResult, KnowledgeChunk, BenchmarkRun, BenchmarkCase, FineTuningRecord } from '../types';
+import { X, Play, Award, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, FileText, BarChart2, Download, Trash2, History, Upload, FileType, Database, ThumbsUp, ThumbsDown, ShieldCheck, Target, Ticket, MessageSquare, Zap, Settings, Gauge } from 'lucide-react';
+import { BenchmarkResult, KnowledgeChunk, BenchmarkRun, BenchmarkCase, FineTuningRecord, TuningStepResult, SearchOverrides } from '../types';
 import { BENCHMARK_DATASET } from '../services/benchmarkData';
-import { runBenchmark, saveBenchmarkRun, loadBenchmarkHistory, deleteBenchmarkRun, parseBenchmarkDocx, parseTicketCSV, saveFineTuningRecord, getSettings } from '../services/mockBackend';
+import { runBenchmark, saveBenchmarkRun, loadBenchmarkHistory, deleteBenchmarkRun, parseBenchmarkDocx, parseTicketCSV, saveFineTuningRecord, getSettings, runAutoTuneBenchmark } from '../services/mockBackend';
 import { toPersianDigits } from '../services/textProcessor';
 
 interface BenchmarkModalProps {
@@ -13,7 +13,7 @@ interface BenchmarkModalProps {
 }
 
 const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks }) => {
-  const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
+  const [activeTab, setActiveTab] = useState<'run' | 'history' | 'autotune'>('run');
   const [datasetMode, setDatasetMode] = useState<'standard' | 'custom' | 'ticket'>('standard');
   const [customDataset, setCustomDataset] = useState<BenchmarkCase[]>([]);
   const [ticketDataset, setTicketDataset] = useState<BenchmarkCase[]>([]);
@@ -24,6 +24,12 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<BenchmarkRun | null>(null);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, number>>({}); 
+  
+  // Auto-Tuner State
+  const [tuningSteps, setTuningSteps] = useState<TuningStepResult[]>([]);
+  const [winnerConfig, setWinnerConfig] = useState<SearchOverrides | null>(null);
+  const [activeStrategyName, setActiveStrategyName] = useState<string>('');
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ticketInputRef = useRef<HTMLInputElement>(null);
 
@@ -156,6 +162,33 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
       await saveBenchmarkRun(newRun);
       await loadHistory();
       setIsRunning(false);
+  };
+
+  const handleAutoTuneStart = async () => {
+    if (chunks.length === 0) {
+        alert("لطفاً ابتدا مستندات را بارگذاری کنید.");
+        return;
+    }
+    
+    setIsRunning(true);
+    setTuningSteps([]);
+    setWinnerConfig(null);
+    setActiveStrategyName('');
+    
+    // Use the dataset selected by user, or fall back to standard if none selected
+    // Note: The logic passes the FULL dataset as requested by the user.
+    const tuningDataset = datasetMode === 'custom' && customDataset.length > 0 
+        ? customDataset 
+        : (datasetMode === 'ticket' && ticketDataset.length > 0 ? ticketDataset : BENCHMARK_DATASET);
+
+    const result = await runAutoTuneBenchmark(tuningDataset, chunks, (step) => {
+        setTuningSteps(prev => [...prev, step]);
+        setActiveStrategyName(step.strategyName);
+    });
+    
+    setWinnerConfig(result);
+    setIsRunning(false);
+    setActiveStrategyName('');
   };
 
   const handleDeleteRun = async (e: React.MouseEvent, id: string) => {
@@ -397,17 +430,26 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex px-6 border-b border-slate-100 bg-slate-50">
+        <div className="flex px-6 border-b border-slate-100 bg-slate-50 gap-4">
             <button 
                 onClick={() => setActiveTab('run')}
-                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'run' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'run' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
             >
+                <Play className="w-4 h-4" />
                 اجرای تست جدید
             </button>
             <button 
-                onClick={() => setActiveTab('history')}
-                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'history' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setActiveTab('autotune')}
+                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'autotune' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
             >
+                <Gauge className="w-4 h-4" />
+                بهینه‌ساز هوشمند (Auto-Tuner)
+            </button>
+            <button 
+                onClick={() => setActiveTab('history')}
+                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'history' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+                <History className="w-4 h-4" />
                 تاریخچه و گزارشات
             </button>
         </div>
@@ -547,6 +589,105 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                         </>
                     )}
                 </>
+            )}
+
+            {/* --- AUTO TUNER TAB --- */}
+            {activeTab === 'autotune' && (
+                <div className="flex flex-col h-full animate-in slide-in-from-right-2">
+                    {!isRunning && !winnerConfig ? (
+                         <div className="flex flex-col items-center justify-center p-10 bg-white rounded-xl border border-slate-200 text-center shadow-sm">
+                             <div className="w-20 h-20 bg-violet-100 text-violet-600 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                                 <Zap className="w-10 h-10" />
+                             </div>
+                             <h3 className="text-2xl font-black text-slate-800 mb-3">تیونینگ خودکار پارامترها (Auto-Tuner)</h3>
+                             <p className="text-slate-500 max-w-lg leading-7 mb-8">
+                                 این ابزار به صورت خودکار استراتژی‌های مختلف جستجو (مثل تنظیمات Min Confidence، Temperature و وزن‌دهی کلمات کلیدی) را تست می‌کند و آنقدر تکرار می‌کند تا به امتیاز دقت بالای <strong>۸۵٪</strong> برسد.
+                             </p>
+                             <button 
+                                onClick={handleAutoTuneStart}
+                                className="bg-violet-600 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-violet-500/30 transition-all hover:bg-violet-700 hover:scale-105 flex items-center gap-2"
+                             >
+                                <Play className="w-5 h-5" />
+                                شروع عملیات بهینه‌سازی
+                             </button>
+                         </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {/* Running Status */}
+                            {isRunning && (
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-6 animate-pulse">
+                                    <div className="relative w-16 h-16">
+                                        <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+                                        <div className="absolute inset-0 border-4 border-violet-500 rounded-full border-t-transparent animate-spin"></div>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-lg text-slate-800">در حال جستجوی بهترین تنظیمات...</h4>
+                                        <p className="text-sm text-slate-500">آزمایش استراتژی‌های مختلف روی مجموعه داده کامل</p>
+                                        {activeStrategyName && <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded mt-2 inline-block">استراتژی فعلی: {activeStrategyName}</span>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Results Timeline */}
+                            <div className="space-y-4">
+                                {tuningSteps.map((step, idx) => (
+                                    <div key={idx} className={`p-4 rounded-xl border flex items-center justify-between transition-all animate-in slide-in-from-bottom-2 ${step.pass ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border ${step.pass ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                                {idx + 1}
+                                            </div>
+                                            <div>
+                                                <h5 className="font-bold text-slate-800">{step.strategyName}</h5>
+                                                <div className="text-xs text-slate-500 font-mono mt-1 flex gap-3">
+                                                    <span>Conf: {step.config.minConfidence}</span>
+                                                    <span>Temp: {step.config.temperature}</span>
+                                                    <span>VecWeight: {step.config.vectorWeight}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={`text-xl font-black ${step.pass ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                {toPersianDigits((step.score * 100).toFixed(1))}٪
+                                            </div>
+                                            <div className="text-[10px] text-slate-400">Score</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Winner Screen */}
+                            {winnerConfig && (
+                                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-8 rounded-2xl text-white shadow-2xl animate-in zoom-in-95 duration-500 text-center">
+                                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-sm">
+                                        <Award className="w-10 h-10 text-white" />
+                                    </div>
+                                    <h2 className="text-3xl font-black mb-2">تنظیمات بهینه پیدا شد!</h2>
+                                    <p className="opacity-90 mb-8">استراتژی <span className="font-bold border-b border-white/40 pb-0.5 mx-1">{winnerConfig.strategyName}</span> بهترین عملکرد را داشت.</p>
+                                    
+                                    <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto mb-8">
+                                        <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                                            <div className="text-xs opacity-70 mb-1">Min Confidence</div>
+                                            <div className="font-mono font-bold text-lg">{winnerConfig.minConfidence}</div>
+                                        </div>
+                                        <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                                            <div className="text-xs opacity-70 mb-1">Temperature</div>
+                                            <div className="font-mono font-bold text-lg">{winnerConfig.temperature}</div>
+                                        </div>
+                                        <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                                            <div className="text-xs opacity-70 mb-1">Vector Weight</div>
+                                            <div className="font-mono font-bold text-lg">{winnerConfig.vectorWeight}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white/20 p-4 rounded-xl text-sm flex items-center justify-center gap-2">
+                                        <Settings className="w-4 h-4" />
+                                        این تنظیمات به صورت خودکار روی سیستم اعمال شدند.
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             )}
 
             {/* --- HISTORY TAB --- */}

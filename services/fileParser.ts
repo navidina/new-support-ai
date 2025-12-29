@@ -259,7 +259,8 @@ export const parseFiles = async (
             const newChunk: KnowledgeChunk = {
                 id: `${file.name}-${i}-${j}-${Date.now()}`,
                 content: parentContent,      
-                searchContent: childContent, 
+                // CRITICAL FIX: Inject context into searchContent so keyword matching works on metadata too
+                searchContent: `${contextHeader}${extraMeta}\n${childContent}`, 
                 embedding: vector,
                 metadata: chunkMeta,
                 source: {

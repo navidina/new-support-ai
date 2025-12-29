@@ -1,5 +1,4 @@
 
-
 export interface AppSettings {
   ollamaBaseUrl: string;
   chatModel: string;
@@ -10,6 +9,7 @@ export interface AppSettings {
   temperature: number;
   systemPrompt: string;
   minConfidence: number;
+  vectorWeight: number; // Added for Auto-Tuner persistence
 }
 
 export interface BaseDocument {
@@ -163,6 +163,7 @@ export interface BenchmarkRun extends BaseDocument {
     passRate: number;
     avgTime: number;
     results: BenchmarkResult[];
+    configUsed?: SearchOverrides; // Record what config achieved this
 }
 
 export interface FineTuningRecord extends BaseDocument {
@@ -181,4 +182,20 @@ export interface QueryResult {
     error?: string;
     options?: string[];
     isAmbiguous?: boolean;
+}
+
+// --- NEW TYPES FOR AUTO-TUNER ---
+export interface SearchOverrides {
+    minConfidence?: number;
+    temperature?: number;
+    vectorWeight?: number; // 0.0 to 1.0 (Vector vs Keyword balance)
+    strategyName?: string;
+}
+
+export interface TuningStepResult {
+    strategyName: string;
+    config: SearchOverrides;
+    score: number;
+    pass: boolean;
+    logs: string[];
 }

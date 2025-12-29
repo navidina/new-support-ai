@@ -17,7 +17,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 ۲. **عدم ذکر منبع در متن:** نام فایل‌ها، شماره صفحات یا شناسه منابع (مثل [Doc1] یا [Source]) را در متن پاسخ **ننویسید**. منابع به صورت جداگانه توسط سیستم نمایش داده می‌شوند.
 ۳. در پاسخ دادن به سوالات فنی (مثل خطاها یا تنظیمات)، نام دقیق پارامترها و مسیرهای منو را عیناً از متن کپی کن.
 ۴. پاسخ باید خلاصه، فنی، روان و بدون حاشیه باشد.`,
-  minConfidence: 0.15 
+  minConfidence: 0.15,
+  vectorWeight: 0.8 // Default: 80% Vector, 20% Keyword
 };
 
 // Internal settings state
@@ -34,6 +35,7 @@ const loadSettings = () => {
       // This ensures existing users get the benefit without clearing storage
       if (currentSettings.chunkSize === 1200) currentSettings.chunkSize = 1500;
       if (currentSettings.chunkOverlap === 200) currentSettings.chunkOverlap = 300;
+      if (currentSettings.vectorWeight === undefined) currentSettings.vectorWeight = 0.8;
     }
   } catch (e) {
     console.error("Failed to load settings", e);
