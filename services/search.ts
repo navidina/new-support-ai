@@ -4,6 +4,7 @@ import { getEmbedding } from './ollama';
 import { getSettings } from './settings';
 import { PERSIAN_SYNONYMS } from './synonymsData';
 import { cleanAndNormalizeText } from './textProcessor'; 
+import { rerankChunks } from './reranker';
 
 const PERSIAN_STOP_WORDS = new Set([
     'از', 'به', 'با', 'برای', 'در', 'هم', 'و', 'که', 'را', 'این', 'آن', 'است', 'هست', 'بود', 'شد', 'می', 
@@ -328,36 +329,68 @@ export const processQuery = async (
 
     let { scoredChunks, criticalTerms, expandedQuery } = await executeSearchPass(effectiveQuery, knowledgeBase, categoryFilter);
 
-    // 3. Rank & Filter (NORMALIZED SCORING)
+    // 3. Stage 1: Broad Recall (Get top 30 candidates based on Hybrid Score)
     
-    let ranked = scoredChunks.map(item => {
+    let initialRanked = scoredChunks.map(item => {
         const boost = calculateAdvancedScoreBoost(item.chunk, criticalTerms, effectiveQuery);
         
         // Weighted Score Formula:
-        // Score = (Vector * W_v) + (KeywordDensity * W_k) + Boost
-        // Boost is capped at 0.5 max.
-        
         let weightedScore = (item.vectorScore * effectiveVectorWeight) + (item.density * effectiveKeywordWeight);
         
         // Special Case: Semantic Mismatch Protection
-        // If vector score is very low (e.g., < 0.25), keywords might be misleading (homonyms).
-        // Only allow boost if vector score indicates *some* relevance, OR if it's an exact ID match (boost=0.5).
         if (item.vectorScore < 0.25 && boost < 0.4) {
-             weightedScore *= 0.5; // Penalize mismatch
+             weightedScore *= 0.5; 
         } else {
              weightedScore += boost;
         }
 
-        // Hard Clamp to 1.0 to prevent "200% confidence"
         const finalScore = Math.min(1.0, Math.max(0, weightedScore));
 
         return { ...item, finalScore };
     })
     .sort((a, b) => b.finalScore - a.finalScore);
 
-    let topCandidates = ranked.filter(r => r.finalScore >= effectiveMinConfidence);
+    // Lower threshold for Recall stage to cast a wider net
+    let broadCandidates = initialRanked
+        .filter(r => r.finalScore >= (effectiveMinConfidence * 0.5))
+        .slice(0, 30); // Grab top 30 for reranking
 
-    // 4. Fallback Strategy: Multi-Query
+    // 4. Stage 2: Reranking (Cross-Encoder Precision)
+    onProgress?.({ 
+        step: 'reranking', 
+        processingTime: Date.now() - startTime,
+        expandedQuery: "Applying BGE-M3 Cross-Encoder..."
+    });
+
+    let topCandidates: any[] = [];
+
+    if (broadCandidates.length > 0) {
+        // Map to structure expected by reranker { content: string, ... }
+        const candidatesForRerank = broadCandidates.map(c => ({
+            ...c,
+            content: c.chunk.content // Reranker needs content
+        }));
+
+        try {
+            // Rerank using BGE-M3 (Transformers.js)
+            const rerankedResults = await rerankChunks(effectiveQuery, candidatesForRerank, 8); // Get Top 8 Golden results
+            
+            // Map back to our structure, replacing score with high-precision Rerank Score
+            topCandidates = rerankedResults.map((r: any) => ({
+                id: r.id,
+                chunk: r.chunk,
+                vectorScore: r.vectorScore,
+                density: r.density,
+                finalScore: r.rerankScore // Trust the Cross-Encoder score
+            }));
+            
+        } catch (e) {
+            console.error("Reranking failed, falling back to hybrid score", e);
+            topCandidates = broadCandidates.slice(0, 8);
+        }
+    }
+
+    // Fallback Strategy: Multi-Query if Broad Recall failed
     if (topCandidates.length === 0) {
         onProgress?.({ 
             step: 'searching', 
@@ -472,10 +505,10 @@ export const processQuery = async (
             text: generatedText,
             sources: selectedChunks.map(c => c.chunk.source),
             debugInfo: {
-                strategy: searchOverrides?.strategyName || 'RAG (Hybrid Normalized)',
+                strategy: searchOverrides?.strategyName || 'RAG (Hybrid + BGE Reranker)',
                 processingTimeMs: Date.now() - startTime,
                 candidateCount: topCandidates.length,
-                logicStep: 'Answer generated from top 8 chunks',
+                logicStep: '2-Stage Retrieval (Vector Recall -> Cross-Encoder Precision)',
                 extractedKeywords: criticalTerms
             }
         };

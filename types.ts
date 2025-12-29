@@ -51,7 +51,7 @@ export interface KnowledgeChunk extends BaseDocument {
 }
 
 // --- RAG PIPELINE VISUALIZATION TYPES ---
-export type PipelineStepType = 'analyzing' | 'vectorizing' | 'searching' | 'generating' | 'idle';
+export type PipelineStepType = 'analyzing' | 'vectorizing' | 'searching' | 'reranking' | 'generating' | 'idle';
 
 export interface PipelineData {
     step: PipelineStepType;

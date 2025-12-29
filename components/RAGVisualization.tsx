@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { PipelineData } from '../types';
-import { Search, Database, Cpu, BrainCircuit, Filter, ChevronDown, ChevronUp, Activity, Zap } from 'lucide-react';
+import { Search, Database, Cpu, BrainCircuit, Filter, ChevronDown, ChevronUp, Activity, Zap, Crosshair } from 'lucide-react';
 import { toPersianDigits } from '../services/textProcessor';
 import { getSettings } from '../services/settings';
 
@@ -28,11 +28,13 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
     const steps = [
         { id: 'analyzing', label: 'آنالیز معنایی', icon: Search, color: 'text-blue-400' },
         { id: 'vectorizing', label: 'بهینه‌سازی کوئری', icon: BrainCircuit, color: 'text-violet-400' },
-        { id: 'searching', label: 'جستجو در اسناد', icon: Database, color: 'text-amber-400' },
+        { id: 'reranking', label: 'غربال دقیق (Rerank)', icon: Crosshair, color: 'text-rose-400' }, // New Step
+        { id: 'searching', label: 'انتخاب اسناد', icon: Database, color: 'text-amber-400' },
         { id: 'generating', label: 'تولید پاسخ نهایی', icon: Cpu, color: 'text-emerald-400' },
     ];
 
     const currentStepIndex = steps.findIndex(s => s.id === data.step);
+    // Handle skipping reranking if not present in data flow explicitly or if fast path taken
     const activeStep = steps[currentStepIndex] || steps[steps.length - 1];
     const isProcessing = data.step !== 'generating' && data.step !== 'idle';
 
@@ -124,14 +126,21 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                                 ))}
                                             </div>
                                         )}
+                                        
+                                        {/* Reranking Step visualization */}
+                                        {step.id === 'reranking' && (isCurrent || isDone) && (
+                                             <div className="mt-1 text-[9px] text-slate-400 animate-fade-in">
+                                                استفاده از مدل <span className="text-rose-300 font-mono">bge-reranker-v2-m3</span> برای مرتب‌سازی دقیق ۳۰ کاندیدا.
+                                             </div>
+                                        )}
 
                                         {step.id === 'searching' && (isCurrent || isDone) && data.retrievedCandidates && (
                                             <div className="mt-2 space-y-2 animate-fade-in w-full">
                                                 {/* Accepted Candidates */}
                                                 <div className="space-y-1">
                                                      <div className="text-[10px] font-bold text-emerald-400 mb-1 flex justify-between">
-                                                        <span>نتایج منطبق</span>
-                                                        <span className="opacity-50 text-[9px]">High Confidence</span>
+                                                        <span>نتایج منطبق (Top 8)</span>
+                                                        <span className="opacity-50 text-[9px]">High Precision</span>
                                                      </div>
                                                      {data.retrievedCandidates.filter(c => c.accepted).slice(0, 4).map((doc, i) => (
                                                         <div key={i} className="flex items-center justify-between text-[9px] text-emerald-100 bg-emerald-900/30 p-1.5 rounded border border-emerald-800/50 hover:bg-emerald-900/50 transition-colors">
@@ -149,7 +158,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                                     <div className="space-y-1 pt-2 border-t border-slate-700/50">
                                                         <div className="text-[10px] font-bold text-rose-400 mb-1 flex justify-between">
                                                             <span>رد شده (امتیاز پایین)</span>
-                                                            <span className="opacity-50 text-[9px]">Threshold: {toPersianDigits((getSettings().minConfidence * 100).toFixed(0))}%</span> 
+                                                            <span className="opacity-50 text-[9px]">Cross-Encoder Rejected</span> 
                                                         </div>
                                                         {data.retrievedCandidates.filter(c => !c.accepted).slice(0, 3).map((doc, i) => (
                                                             <div key={i} className="flex items-center justify-between text-[9px] text-slate-500 bg-slate-800/30 p-1.5 rounded border border-slate-700/30 opacity-70 hover:opacity-100 transition-opacity">
@@ -157,11 +166,6 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                                                 <span className="text-rose-900/70 font-mono">{toPersianDigits((doc.score * 100).toFixed(0))}%</span>
                                                             </div>
                                                         ))}
-                                                        {data.retrievedCandidates.filter(c => !c.accepted).length > 3 && (
-                                                            <div className="text-[8px] text-slate-600 text-center pt-1">
-                                                                ... و {toPersianDigits(data.retrievedCandidates.filter(c => !c.accepted).length - 3)} مورد دیگر
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 )}
                                             </div>
