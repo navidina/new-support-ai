@@ -312,7 +312,6 @@ export const processQuery = async (
 
     // Configuration Merging
     const effectiveMinConfidence = searchOverrides?.minConfidence ?? settings.minConfidence;
-    const effectiveTemperature = searchOverrides?.temperature ?? temperatureOverride ?? settings.temperature;
     const effectiveVectorWeight = searchOverrides?.vectorWeight ?? settings.vectorWeight ?? 0.8; 
     const effectiveKeywordWeight = 1.0 - effectiveVectorWeight;
 
@@ -420,23 +419,28 @@ export const processQuery = async (
     onProgress?.({ step: 'generating', processingTime: Date.now() - startTime });
 
     const systemPrompt = `
-تو یک دستیار پشتیبانی فنی دقیق و حرفه‌ای برای نرم‌افزارهای مالی و بورس هستی.
-دستورالعمل‌های حیاتی:
-۱. فقط و فقط بر اساس "مستندات ارائه شده" پاسخ بده. از دانش قبلی خودت استفاده نکن.
-۲. اگر پاسخ در متن نیست، صریحاً بگو "اطلاعاتی در مستندات یافت نشد". هرگز حدس نزن.
-۳. اعداد، کدهای خطا، فرمول‌ها و مسیرهای منو را عیناً و بدون تغییر ذکر کن.
-۴. اگر سوال در مورد "لیست" یا "انواع" است، تمام موارد موجود در متن را نام ببر.
-۵. پاسخ باید به زبان فارسی روان، فنی و بدون حاشیه باشد.
+نقش: شما یک ماشین پاسخ‌دهی دقیق مبتنی بر واقعیت هستید. شما دستیار یا مشاور نیستید؛ فقط استخراج‌کننده اطلاعات هستید.
+
+قوانین حیاتی و غیرقابل‌تخطی:
+۱. [محدوده پاسخ] فقط و فقط به سوالی که پرسیده شده پاسخ دهید. از ارائه "اطلاعات تکمیلی"، "نکات مرتبط" یا "آموزش‌های اضافی" اکیداً خودداری کنید.
+۲. [منبع] پاسخ شما باید کلمه به کلمه بر اساس تگ <CONTEXT> باشد. اگر در کانتکست نیست، بنویسید: "اطلاعاتی در مستندات یافت نشد".
+۳. [خلاصه] پاسخ باید کوتاه، مستقیم و بدون مقدمه‌چینی (مثل "با توجه به متن...") باشد.
+۴. [وفاداری] هیچ دانش قبلی یا اطلاعات عمومی را ترکیب نکنید.
+
+فرمت ورودی:
+<CONTEXT>
+{متن مستندات}
+</CONTEXT>
+
+<QUESTION>
+{سوال کاربر}
+</QUESTION>
 `;
     
-    const userPrompt = `
-سوال کاربر: ${query}
-
-مستندات یافت شده (مرتبط‌ترین بخش‌ها):
-${contextText}
-
-با توجه دقیق به مستندات بالا، به سوال پاسخ دهید. اگر مطمئن نیستید، بگویید نمی‌دانم.
-`;
+    // STRICT FORMATTING FOR QWEN
+    const contextWithTags = `<CONTEXT>\n${contextText}\n</CONTEXT>`;
+    const questionWithTags = `<QUESTION>\n${query}\n</QUESTION>`;
+    const finalUserMessage = `${contextWithTags}\n${questionWithTags}\n\nپاسخ نهایی:`;
 
     try {
         const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
@@ -447,10 +451,12 @@ ${contextText}
                 stream: false,
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
+                    { role: 'user', content: finalUserMessage }
                 ],
                 options: { 
-                    temperature: effectiveTemperature
+                    temperature: 0.1, // Slight incr to prevent loop, still strict
+                    num_ctx: 4096,
+                    stop: ["<|im_end|>", "User:", "System:"]
                 }
             }),
         });

@@ -390,9 +390,6 @@ export const prepareGraphRagData = (chunks: KnowledgeChunk[]) => {
         }
     });
 
-    // 2. Add Cluster/Community Nodes (Optional - simplified as Category Hubs)
-    // Already handled by including Categories as entities above.
-
     return { 
         nodes: Array.from(nodes.values()), 
         links, 
@@ -400,4 +397,130 @@ export const prepareGraphRagData = (chunks: KnowledgeChunk[]) => {
         networkLinks: [], 
         topicLinks: [] 
     };
+};
+
+// ==========================================
+// GALAXY GRAPH LOGIC (The new creative mode)
+// ==========================================
+
+export const prepareGalaxyGraphData = (chunks: KnowledgeChunk[]) => {
+    const nodes: GraphNode[] = [];
+    const links: GraphLink[] = [];
+
+    // 1. Group by Category (The Solar Systems)
+    const categoryGroups = new Map<string, KnowledgeChunk[]>();
+    chunks.forEach(chunk => {
+        const cat = chunk.metadata?.category || 'general';
+        if (!categoryGroups.has(cat)) categoryGroups.set(cat, []);
+        categoryGroups.get(cat)!.push(chunk);
+    });
+
+    // 2. Center of Galaxy (Supermassive Black Hole / Core Knowledge)
+    const coreNode: GraphNode = {
+        id: 'CORE',
+        group: 'core',
+        label: 'هسته دانش',
+        fullLabel: 'مرکز دانش رایان',
+        x: 0, y: 0, vx: 0, vy: 0,
+        radius: 60, baseRadius: 60,
+        color: '#ffffff', // White glow
+        chunkCount: chunks.length
+    };
+    nodes.push(coreNode);
+
+    // 3. Create Planetary Systems (Categories orbiting Core)
+    const categories = Array.from(categoryGroups.keys());
+    const angleStep = (Math.PI * 2) / categories.length;
+    const ORBIT_RADIUS = 400; // Distance of categories from Core
+
+    categories.forEach((cat, index) => {
+        const angle = index * angleStep;
+        const catX = Math.cos(angle) * ORBIT_RADIUS;
+        const catY = Math.sin(angle) * ORBIT_RADIUS;
+        
+        // Category "Sun"
+        const catNode: GraphNode = {
+            id: `galaxy-cat-${cat}`,
+            group: 'galaxy-star',
+            label: categoryLabels[cat] || cat,
+            fullLabel: categoryLabels[cat] || cat,
+            x: catX, y: catY, vx: 0, vy: 0,
+            radius: 35, baseRadius: 35,
+            color: getCategoryColor(cat),
+            chunkCount: categoryGroups.get(cat)!.length,
+            // Anchor for physics to pull back to orbit
+            targetX: catX, targetY: catY 
+        };
+        nodes.push(catNode);
+        
+        // Link to Core (Gravity line)
+        links.push({ source: 'CORE', target: catNode.id, type: 'gravity' });
+
+        // 4. Create Planets (Files/Chunks) orbiting the Category
+        const catChunks = categoryGroups.get(cat)!;
+        const files = new Set(catChunks.map(c => c.source.id));
+        
+        // We only show FILE nodes to avoid overcrowding, sizing them by chunk count
+        let fileIndex = 0;
+        const fileAngleStep = (Math.PI * 2) / files.size;
+        const FILE_ORBIT_RADIUS_BASE = 120;
+
+        files.forEach(fileName => {
+            const fileChunksCount = catChunks.filter(c => c.source.id === fileName).length;
+            
+            // Randomize orbit slightly for organic look
+            const orbitVar = (Math.random() - 0.5) * 60; 
+            const currentOrbit = FILE_ORBIT_RADIUS_BASE + orbitVar;
+            
+            const fileAngle = fileIndex * fileAngleStep + (Math.random() * 0.5); 
+            
+            const fileX = catX + Math.cos(fileAngle) * currentOrbit;
+            const fileY = catY + Math.sin(fileAngle) * currentOrbit;
+
+            const fileNode: GraphNode = {
+                id: `galaxy-file-${fileName}-${cat}`,
+                group: 'galaxy-planet',
+                label: fileName.length > 15 ? fileName.substring(0, 12) + '...' : fileName,
+                fullLabel: fileName,
+                x: fileX, y: fileY, vx: 0, vy: 0,
+                // Size depends on mass (chunk count)
+                radius: Math.min(12, 4 + Math.sqrt(fileChunksCount)), 
+                baseRadius: Math.min(12, 4 + Math.sqrt(fileChunksCount)),
+                color: lightenColor(getCategoryColor(cat), 40),
+                chunkCount: fileChunksCount,
+                metadata: { category: cat }
+            };
+            
+            nodes.push(fileNode);
+            links.push({ source: catNode.id, target: fileNode.id, type: 'orbit' });
+            fileIndex++;
+        });
+    });
+
+    return { 
+        nodes, 
+        links, 
+        treeLinks: [], networkLinks: [], topicLinks: [] 
+    };
+};
+
+// Helper for colors
+const getCategoryColor = (cat: string) => {
+    switch(cat) {
+        case 'troubleshooting': return '#ef4444'; // Red
+        case 'online_trading': return '#f59e0b'; // Amber
+        case 'back_office': return '#3b82f6'; // Blue
+        case 'funds': return '#10b981'; // Emerald
+        case 'technical_infrastructure': return '#6366f1'; // Indigo
+        default: return '#94a3b8'; // Slate
+    }
+};
+
+const lightenColor = (hex: string, percent: number) => {
+    const num = parseInt(hex.replace("#",""), 16),
+    amt = Math.round(2.55 * percent),
+    R = (num >> 16) + amt,
+    B = ((num >> 8) & 0x00FF) + amt,
+    G = (num & 0x0000FF) + amt;
+    return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 + (B<255?B<1?0:B:255)*0x100 + (G<255?G<1?0:G:255)).toString(16).slice(1);
 };

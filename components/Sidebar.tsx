@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Network, History, Plus, Settings, HelpCircle, ClipboardCheck, Book, Trash2, MessageSquare, Sparkles, Box, Share2, Workflow, GitMerge } from 'lucide-react';
+import { Network, History, Plus, Settings, HelpCircle, ClipboardCheck, Book, Trash2, MessageSquare, Sparkles, Box, Share2, Workflow, GitMerge, Orbit } from 'lucide-react';
 import { Conversation, GraphLayoutMode } from '../types';
 import Button from './Button';
 
@@ -23,6 +23,7 @@ interface SidebarProps {
 }
 
 const graphModes = [
+    { id: 'galaxy', label: 'کهکشان دانش (Galaxy)', icon: Orbit, desc: 'نمایش تراکم و حجم دانش به صورت خوشه‌های کیهانی' },
     { id: 'schema', label: 'طرح‌واره (Schema)', icon: Box, desc: 'نمایش ساختار سیستم‌ها و مشکلات' },
     { id: 'tree', label: 'سلسله‌مراتب (Hierarchy)', icon: Workflow, desc: 'نمایش درختی بالا به پایین' },
     { id: 'graphrag', label: 'گراف دانش سازمانی (GraphRAG)', icon: GitMerge, desc: 'نمایش موجودیت‌ها و روابط خوشه‌بندی شده' },

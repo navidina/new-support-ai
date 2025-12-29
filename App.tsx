@@ -9,7 +9,7 @@ import HelpModal from './components/HelpModal';
 import BenchmarkModal from './components/BenchmarkModal';
 import KnowledgeWikiModal from './components/KnowledgeWikiModal';
 import { ProcessingOverlay } from './components/ProcessingOverlay';
-import { ViewMode, GraphLayoutMode } from './types';
+import { ViewMode, GraphLayoutMode, GraphNode } from './types';
 import { useRAGApplication } from './hooks/useRAGApplication';
 import Button from './components/Button';
 
@@ -77,6 +77,28 @@ function App() {
   const handleSuggestionClick = (text: string) => {
       actions.setInputText(text);
       inputRef.current?.focus();
+  };
+
+  const handleGraphNodeAction = (action: 'analyze' | 'ask', node: GraphNode) => {
+      setViewMode('chat');
+      
+      let text = '';
+      const label = node.fullLabel || node.label;
+      
+      if (action === 'analyze') {
+          // Check if it's a category/cluster or a file
+          const isCategory = node.group === 'category' || node.group === 'galaxy-star' || node.group === 'cluster';
+          
+          if (isCategory) {
+              text = `یک گزارش جامع درباره دسته‌بندی «${label}» بنویس و موضوعات اصلی آن را شرح بده.`;
+          } else {
+              text = `لطفاً سند «${label}» را تحلیل کن و نکات کلیدی آن را استخراج کن.`;
+          }
+      } else if (action === 'ask') {
+          text = `در مورد سند «${label}» چه اطلاعاتی داری؟`;
+      }
+      
+      actions.setInputText(text);
   };
 
   useEffect(() => {
@@ -334,6 +356,7 @@ function App() {
                 <KnowledgeGraph 
                     chunks={state.customChunks} 
                     layoutMode={graphLayout}
+                    onNodeAction={handleGraphNodeAction}
                 />
             </div>
         )}
