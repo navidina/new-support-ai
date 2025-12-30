@@ -12,6 +12,7 @@ import { ProcessingOverlay } from './components/ProcessingOverlay';
 import { ViewMode, GraphLayoutMode, GraphNode } from './types';
 import { useRAGApplication } from './hooks/useRAGApplication';
 import Button from './components/Button';
+import { getSettings } from './services/settings';
 
 function App() {
   const { state, actions } = useRAGApplication();
@@ -26,9 +27,34 @@ function App() {
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
   const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
   const [totalFilesToProcess, setTotalFilesToProcess] = useState(0);
+  const [currentTheme, setCurrentTheme] = useState<'light'|'dark'>('dark');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Apply Theme
+  useEffect(() => {
+      const applyTheme = () => {
+          const settings = getSettings();
+          setCurrentTheme(settings.theme);
+          if (settings.theme === 'dark') {
+              document.documentElement.classList.add('dark');
+          } else {
+              document.documentElement.classList.remove('dark');
+          }
+      };
+      
+      applyTheme();
+      
+      // Listen for local storage changes or setting updates (simple poll for settings modal changes)
+      const interval = setInterval(() => {
+          const s = getSettings();
+          if (s.theme !== (document.documentElement.classList.contains('dark') ? 'dark' : 'light')) {
+              applyTheme();
+          }
+      }, 500);
+      return () => clearInterval(interval);
+  }, [isSettingsOpen]);
 
   useLayoutEffect(() => {
     if (viewMode === 'chat' && scrollContainerRef.current) {
@@ -109,14 +135,14 @@ function App() {
 
   if (state.isDbLoading) {
       return (
-          <div className="flex h-screen items-center justify-center bg-surface-950 text-surface-200 flex-col gap-6 font-sans animate-fade-in relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-brand-900/40 to-surface-950 opacity-50"></div>
+          <div className="flex h-screen items-center justify-center bg-surface-50 dark:bg-surface-950 text-surface-900 dark:text-surface-200 flex-col gap-6 font-sans animate-fade-in relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-tr from-brand-100 to-white dark:from-brand-900/40 dark:to-surface-950 opacity-50"></div>
               <div className="relative z-10 flex flex-col items-center">
-                  <div className="w-20 h-20 bg-surface-900/50 backdrop-blur-md border border-white/10 rounded-2xl flex items-center justify-center shadow-2xl shadow-brand-500/20 mb-6 animate-bounce">
-                      <Sparkles className="w-10 h-10 text-brand-400" />
+                  <div className="w-20 h-20 bg-white/50 dark:bg-surface-900/50 backdrop-blur-md border border-brand-200 dark:border-white/10 rounded-2xl flex items-center justify-center shadow-2xl shadow-brand-500/20 mb-6 animate-bounce">
+                      <Sparkles className="w-10 h-10 text-brand-500 dark:text-brand-400" />
                   </div>
-                  <h3 className="text-xl font-bold text-white tracking-wide">رایان هم‌افزا</h3>
-                  <p className="text-sm text-surface-400 mt-2 animate-pulse font-mono">Loading Neural Core...</p>
+                  <h3 className="text-xl font-bold text-slate-800 dark:text-white tracking-wide">رایان هم‌افزا</h3>
+                  <p className="text-sm text-slate-500 dark:text-surface-400 mt-2 animate-pulse font-mono">Loading Neural Core...</p>
               </div>
           </div>
       );
@@ -128,18 +154,18 @@ function App() {
   const showOverlay = isFileProcessing && !isBackgroundProcessing;
 
   const quickActions = [
-      { icon: <BarChart className="w-5 h-5 text-emerald-400" />, title: "مغایرت مالی", text: "مغایرت مانده مشتری در بک آفیس" },
+      { icon: <BarChart className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />, title: "مغایرت مالی", text: "مغایرت مانده مشتری در بک آفیس" },
       { icon: <Globe className="w-5 h-5 text-accent-purple" />, title: "عملیات اجرایی", text: "روش تغییر کارگزار ناظر" }
   ];
 
   return (
-    <div className="flex h-screen bg-surface-950 overflow-hidden font-sans text-surface-100 relative selection:bg-brand-500/30 selection:text-white" dir="rtl">
+    <div className="flex h-screen bg-surface-50 dark:bg-surface-950 overflow-hidden font-sans text-surface-900 dark:text-surface-100 relative selection:bg-brand-500/30 selection:text-brand-900 dark:selection:text-white" dir="rtl">
         
-        {/* Dark Mode Aurora Background */}
+        {/* Aurora Background (Adaptive) */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-            <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-brand-600/10 rounded-full blur-[120px] animate-float opacity-60"></div>
-            <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-accent-purple/10 rounded-full blur-[100px] animate-float-delayed opacity-50"></div>
-            <div className="absolute top-[30%] left-[20%] w-[400px] h-[400px] bg-accent-cyan/5 rounded-full blur-[80px] animate-pulse-slow"></div>
+            <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-brand-200/40 dark:bg-brand-600/10 rounded-full blur-[120px] animate-float opacity-60"></div>
+            <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-indigo-200/40 dark:bg-accent-purple/10 rounded-full blur-[100px] animate-float-delayed opacity-50"></div>
+            <div className="absolute top-[30%] left-[20%] w-[400px] h-[400px] bg-cyan-100/40 dark:bg-accent-cyan/5 rounded-full blur-[80px] animate-pulse-slow"></div>
         </div>
       
       {/* Processing Overlay Container */}
@@ -156,7 +182,7 @@ function App() {
       </div>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden animate-fade-in" onClick={() => setMobileMenuOpen(false)}></div>
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm z-40 md:hidden animate-fade-in" onClick={() => setMobileMenuOpen(false)}></div>
       )}
 
       <SettingsModal 
@@ -200,12 +226,12 @@ function App() {
       <div className="flex-1 flex flex-col h-full w-full relative z-10">
         
         {/* Mobile Header (Glass) */}
-        <header className="md:hidden h-16 bg-surface-900/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-4 shrink-0 z-20 sticky top-0">
-          <h1 className="font-bold text-white flex items-center gap-2">
-             <Sparkles className="w-5 h-5 text-brand-400" />
-             <span className="bg-gradient-to-l from-brand-300 to-white bg-clip-text text-transparent">رایان هم‌افزا</span>
+        <header className="md:hidden h-16 bg-white/80 dark:bg-surface-900/80 backdrop-blur-md border-b border-slate-200 dark:border-white/5 flex items-center justify-between px-4 shrink-0 z-20 sticky top-0">
+          <h1 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+             <Sparkles className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+             <span className="bg-gradient-to-l from-brand-600 to-slate-800 dark:from-brand-300 dark:to-white bg-clip-text text-transparent">رایان هم‌افزا</span>
           </h1>
-          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-surface-400 hover:text-white transition-colors">
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-slate-600 dark:text-surface-400 hover:text-slate-900 dark:hover:text-white transition-colors">
             {mobileMenuOpen ? <X /> : <Menu />}
           </button>
         </header>
@@ -218,11 +244,11 @@ function App() {
                     {/* Empty State / Welcome Screen */}
                     {state.customChunks.length === 0 && state.messages.length === 1 && (
                         <div className="mt-12 flex flex-col items-center justify-center text-center animate-fade-in">
-                            <div className="w-24 h-24 bg-gradient-to-br from-surface-800 to-surface-900 border border-white/10 rounded-[2rem] flex items-center justify-center mb-8 shadow-[0_0_40px_-10px_rgba(99,102,241,0.3)] rotate-3 transition-transform hover:rotate-0 duration-500">
-                                <Sparkles className="w-10 h-10 text-brand-400 drop-shadow-[0_0_10px_rgba(129,140,248,0.5)]" />
+                            <div className="w-24 h-24 bg-gradient-to-br from-white to-slate-100 dark:from-surface-800 dark:to-surface-900 border border-slate-200 dark:border-white/10 rounded-[2rem] flex items-center justify-center mb-8 shadow-2xl dark:shadow-[0_0_40px_-10px_rgba(99,102,241,0.3)] rotate-3 transition-transform hover:rotate-0 duration-500">
+                                <Sparkles className="w-10 h-10 text-brand-600 dark:text-brand-400 drop-shadow-[0_0_10px_rgba(129,140,248,0.5)]" />
                             </div>
-                            <h3 className="text-3xl font-black text-white mb-4 tracking-tight">هوش مصنوعی سازمانی</h3>
-                            <p className="text-surface-400 max-w-lg leading-8 mb-10 text-lg">
+                            <h3 className="text-3xl font-black text-slate-800 dark:text-white mb-4 tracking-tight">هوش مصنوعی سازمانی</h3>
+                            <p className="text-slate-600 dark:text-surface-400 max-w-lg leading-8 mb-10 text-lg">
                                 پایگاه دانش محلی خود را بارگذاری کنید تا دستیار هوشمند با حفظ محرمانگی کامل به سوالات شما پاسخ دهد.
                             </p>
                             
@@ -242,20 +268,20 @@ function App() {
                         <>
                             {state.messages.length === 1 && (
                                 <div className="mb-10 animate-slide-up-fade">
-                                    <h4 className="text-xs font-bold text-surface-500 uppercase tracking-widest mb-4 px-2">پیشنهادات هوشمند:</h4>
+                                    <h4 className="text-xs font-bold text-slate-500 dark:text-surface-500 uppercase tracking-widest mb-4 px-2">پیشنهادات هوشمند:</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {quickActions.map((item, i) => (
                                             <button 
                                                 key={i} 
                                                 onClick={() => handleSuggestionClick(item.text)}
-                                                className="glass-card hover:bg-surface-800/80 p-4 rounded-2xl transition-all text-right flex items-start gap-4 group"
+                                                className="glass-card hover:bg-white dark:hover:bg-surface-800/80 p-4 rounded-2xl transition-all text-right flex items-start gap-4 group bg-white/50 dark:bg-surface-900/50"
                                             >
-                                                <div className="p-3 bg-surface-800/50 rounded-xl border border-white/5 group-hover:scale-110 transition-transform shadow-inner">
+                                                <div className="p-3 bg-white dark:bg-surface-800/50 rounded-xl border border-slate-200 dark:border-white/5 group-hover:scale-110 transition-transform shadow-inner">
                                                     {item.icon}
                                                 </div>
                                                 <div>
-                                                    <span className="block text-xs font-bold text-surface-400 mb-1">{item.title}</span>
-                                                    <span className="text-sm font-medium text-white group-hover:text-brand-300 transition-colors">{item.text}</span>
+                                                    <span className="block text-xs font-bold text-slate-500 dark:text-surface-400 mb-1">{item.title}</span>
+                                                    <span className="text-sm font-medium text-slate-800 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-300 transition-colors">{item.text}</span>
                                                 </div>
                                             </button>
                                         ))}
@@ -286,7 +312,7 @@ function App() {
                     {/* Status Pill */}
                     {state.isProcessing && (!isFileProcessing || isBackgroundProcessing) && state.processingStatus && (
                         <div className="flex justify-center mb-3">
-                            <div className="bg-surface-900/80 backdrop-blur-md text-brand-300 text-xs font-bold px-4 py-1.5 rounded-full shadow-lg border border-brand-500/30 flex items-center gap-2 animate-pulse">
+                            <div className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-md text-brand-600 dark:text-brand-300 text-xs font-bold px-4 py-1.5 rounded-full shadow-lg border border-brand-200 dark:border-brand-500/30 flex items-center gap-2 animate-pulse">
                                 <Sparkles className="w-3 h-3" />
                                 {state.processingStatus}
                             </div>
@@ -295,8 +321,8 @@ function App() {
 
                     {/* The Input Bar */}
                     <div className={`
-                        relative bg-surface-900/70 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] rounded-[2rem] p-2 transition-all duration-300
-                        ${state.useWebSearch ? 'ring-1 ring-accent-cyan/50 shadow-[0_0_20px_rgba(6,182,212,0.2)]' : 'hover:border-white/20 hover:shadow-[0_15px_40px_rgba(0,0,0,0.6)]'}
+                        relative bg-white/80 dark:bg-surface-900/70 backdrop-blur-xl border border-slate-200 dark:border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] rounded-[2rem] p-2 transition-all duration-300
+                        ${state.useWebSearch ? 'ring-1 ring-accent-cyan/50 shadow-[0_0_20px_rgba(6,182,212,0.2)]' : 'hover:border-slate-300 dark:hover:border-white/20 hover:shadow-xl'}
                     `}>
                         <div className="flex items-end gap-2">
                             {/* Mode Toggle */}
@@ -304,8 +330,8 @@ function App() {
                                 onClick={() => actions.setUseWebSearch(!state.useWebSearch)}
                                 className={`mb-1 p-2.5 rounded-full transition-all duration-300 ${
                                     state.useWebSearch 
-                                    ? 'bg-accent-cyan/20 text-accent-cyan rotate-180' 
-                                    : 'bg-surface-800 text-surface-400 hover:bg-surface-700 hover:text-white'
+                                    ? 'bg-accent-cyan/10 text-accent-cyan rotate-180' 
+                                    : 'bg-slate-100 dark:bg-surface-800 text-slate-500 dark:text-surface-400 hover:bg-slate-200 dark:hover:bg-surface-700 hover:text-slate-800 dark:hover:text-white'
                                 }`}
                                 title={state.useWebSearch ? "جستجوی ترکیبی (وب + داک)" : "فقط مستندات داخلی"}
                             >
@@ -318,7 +344,7 @@ function App() {
                                 onChange={(e) => actions.setInputText(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 placeholder={state.customChunks.length > 0 ? "سوال خود را بپرسید..." : "منتظر بارگذاری..."}
-                                className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-[52px] py-3.5 px-2 text-white placeholder-surface-500 text-[0.95rem] font-medium leading-relaxed custom-scrollbar"
+                                className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-[52px] py-3.5 px-2 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-surface-500 text-[0.95rem] font-medium leading-relaxed custom-scrollbar"
                                 rows={1}
                                 disabled={state.isProcessing || state.customChunks.length === 0}
                             />
@@ -329,7 +355,7 @@ function App() {
                                 className={`mb-1 p-3 rounded-full transition-all duration-300 flex items-center justify-center w-11 h-11 shadow-lg ${
                                 state.inputText.trim() && !state.isProcessing && state.customChunks.length > 0
                                     ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white hover:scale-110 active:scale-95 shadow-brand-500/30'
-                                    : 'bg-surface-800 text-surface-600 cursor-not-allowed'
+                                    : 'bg-slate-100 dark:bg-surface-800 text-slate-400 dark:text-surface-600 cursor-not-allowed'
                                 }`}
                             >
                                 {state.isProcessing ? (
@@ -342,7 +368,7 @@ function App() {
                     </div>
                     
                     <div className="text-center mt-3">
-                        <p className="text-[10px] text-surface-500 font-medium opacity-60 flex justify-center gap-2">
+                        <p className="text-[10px] text-slate-400 dark:text-surface-500 font-medium opacity-60 flex justify-center gap-2">
                             <Lock className="w-3 h-3" />
                             پردازش محلی (Local RAG) - داده‌ها امن هستند.
                         </p>
@@ -353,11 +379,15 @@ function App() {
             </>
         ) : (
             // Graph View
-            <div className="w-full h-full animate-fade-in bg-surface-950">
+            <div className="w-full h-full animate-fade-in bg-slate-50 dark:bg-surface-950">
                 <KnowledgeGraph 
-                    chunks={state.customChunks} 
+                    chunks={state.customChunks}
+                    ticketChunks={state.ticketChunks} // Pass isolated tickets
                     layoutMode={graphLayout}
                     onNodeAction={handleGraphNodeAction}
+                    onImportTickets={actions.handleTicketFileSelected}
+                    onClearTickets={actions.handleClearTickets}
+                    theme={currentTheme}
                 />
             </div>
         )}

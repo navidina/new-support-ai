@@ -45,42 +45,42 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
     };
 
     return (
-        <div className="w-full my-3 border border-slate-200/60 rounded-xl overflow-hidden bg-white/50 backdrop-blur-sm font-sans" dir="rtl">
+        <div className="w-full my-3 border border-white/10 rounded-xl overflow-hidden bg-surface-950/40 backdrop-blur-md font-sans" dir="rtl">
             {/* Header / Toggle */}
             <button 
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex items-center justify-between p-3 bg-slate-50/50 hover:bg-slate-100/80 transition-all cursor-pointer"
+                className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-all cursor-pointer"
             >
                 <div className="flex items-center gap-3">
-                    <div className={`p-1.5 rounded-lg border border-slate-200 ${isProcessing ? 'bg-white shadow-sm' : 'bg-slate-100'}`}>
+                    <div className={`p-1.5 rounded-lg border border-white/10 ${isProcessing ? 'bg-brand-500/10 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-surface-800'}`}>
                         {isProcessing ? (
-                            <Activity className="w-4 h-4 text-indigo-600 animate-spin" />
+                            <Activity className="w-4 h-4 text-brand-400 animate-spin" />
                         ) : (
-                            <Cpu className="w-4 h-4 text-slate-500" />
+                            <Cpu className="w-4 h-4 text-surface-400" />
                         )}
                     </div>
                     <div className="flex flex-col items-start">
-                        <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                        <span className="text-xs font-bold text-surface-200 flex items-center gap-2">
                             {getStatusText()}
-                            {isProcessing && <span className="flex h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>}
+                            {isProcessing && <span className="flex h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse"></span>}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-sans mt-0.5">
+                        <span className="text-[10px] text-surface-500 font-sans mt-0.5">
                             زمان کل: {toPersianDigits((elapsed / 1000).toFixed(1))} ثانیه
                         </span>
                     </div>
                 </div>
-                <div className="text-slate-400">
+                <div className="text-surface-500">
                     {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
             </button>
 
             {/* Collapsible Content */}
             {isOpen && (
-                <div className="bg-slate-900 border-t border-slate-800 p-4 animate-slide-in-from-top-2">
+                <div className="bg-surface-950/60 border-t border-white/5 p-4 animate-slide-in-from-top-2">
                     {/* Steps Visualization */}
                     <div className="space-y-5 relative">
                         {/* Connecting Line */}
-                        <div className="absolute top-4 bottom-4 right-[15px] w-0.5 bg-slate-800 pointer-events-none"></div>
+                        <div className="absolute top-4 bottom-4 right-[15px] w-0.5 bg-surface-800 pointer-events-none"></div>
 
                         {steps.map((step, idx) => {
                             const isDone = currentStepIndex > idx;
@@ -91,27 +91,27 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                 <div key={step.id} className={`relative flex gap-4 ${isPending ? 'opacity-30 grayscale' : 'opacity-100'} transition-all duration-500`}>
                                     {/* Icon Node */}
                                     <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shrink-0
-                                        ${isCurrent ? `bg-slate-800 border-${step.color.split('-')[1]}-500 shadow-[0_0_10px_currentColor] ${step.color}` : ''}
-                                        ${isDone ? 'bg-slate-800 border-slate-600 text-slate-500' : ''}
-                                        ${isPending ? 'bg-slate-900 border-slate-800 text-slate-700' : ''}
+                                        ${isCurrent ? `bg-surface-800 border-${step.color.split('-')[1]}-500 shadow-[0_0_10px_currentColor] ${step.color}` : ''}
+                                        ${isDone ? 'bg-surface-800 border-surface-600 text-surface-500' : ''}
+                                        ${isPending ? 'bg-surface-900 border-surface-800 text-surface-700' : ''}
                                     `}>
                                         <step.icon className="w-4 h-4" />
                                     </div>
 
                                     {/* Content */}
                                     <div className="flex-1 pt-1 min-w-0 text-right">
-                                        <h4 className={`text-xs font-bold ${isCurrent ? 'text-slate-200' : 'text-slate-500'}`}>
+                                        <h4 className={`text-xs font-bold ${isCurrent ? 'text-surface-200' : 'text-surface-500'}`}>
                                             {step.label}
                                         </h4>
                                         
                                         {/* Step Details */}
                                         {step.id === 'analyzing' && (isCurrent || isDone) && data.expandedQuery && (
-                                            <div className="mt-2 p-2 rounded bg-indigo-950/40 border border-indigo-900/50 flex flex-col gap-1.5 animate-fade-in">
-                                                <div className="flex items-center gap-1.5 text-[9px] text-indigo-300 font-bold uppercase tracking-wider">
+                                            <div className="mt-2 p-2 rounded bg-brand-900/20 border border-brand-500/20 flex flex-col gap-1.5 animate-fade-in">
+                                                <div className="flex items-center gap-1.5 text-[9px] text-brand-300 font-bold uppercase tracking-wider">
                                                     <Zap className="w-3 h-3" />
                                                     هسته معنایی (AI Intent)
                                                 </div>
-                                                <div className="text-[10px] text-slate-200 leading-5">
+                                                <div className="text-[10px] text-surface-300 leading-5">
                                                     {data.expandedQuery}
                                                 </div>
                                             </div>
@@ -120,7 +120,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                         {step.id === 'vectorizing' && (isCurrent || isDone) && data.extractedKeywords && (
                                             <div className="mt-2 flex flex-wrap gap-1.5 animate-fade-in">
                                                 {data.extractedKeywords.slice(0, 6).map((k, i) => (
-                                                    <span key={i} className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-blue-300 text-[9px]">
+                                                    <span key={i} className="px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-brand-300 text-[9px]">
                                                         {k}
                                                     </span>
                                                 ))}
@@ -129,8 +129,8 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                         
                                         {/* Reranking Step visualization */}
                                         {step.id === 'reranking' && (isCurrent || isDone) && (
-                                             <div className="mt-1 text-[9px] text-slate-400 animate-fade-in">
-                                                استفاده از مدل <span className="text-rose-300 font-mono">bge-reranker-v2-m3</span> برای مرتب‌سازی دقیق ۳۰ کاندیدا.
+                                             <div className="mt-1 text-[9px] text-surface-400 animate-fade-in">
+                                                استفاده از مدل <span className="text-rose-400 font-mono">bge-reranker-v2-m3</span> برای مرتب‌سازی دقیق ۳۰ کاندیدا.
                                              </div>
                                         )}
 
@@ -143,26 +143,26 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                                         <span className="opacity-50 text-[9px]">High Precision</span>
                                                      </div>
                                                      {data.retrievedCandidates.filter(c => c.accepted).slice(0, 4).map((doc, i) => (
-                                                        <div key={i} className="flex items-center justify-between text-[9px] text-emerald-100 bg-emerald-900/30 p-1.5 rounded border border-emerald-800/50 hover:bg-emerald-900/50 transition-colors">
+                                                        <div key={i} className="flex items-center justify-between text-[9px] text-emerald-100 bg-emerald-500/10 p-1.5 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors">
                                                             <span className="truncate max-w-[150px]" title={doc.title}>{doc.title}</span>
                                                             <span className="text-emerald-300 font-mono font-bold">{toPersianDigits((doc.score * 100).toFixed(0))}%</span>
                                                         </div>
                                                     ))}
                                                     {data.retrievedCandidates.filter(c => c.accepted).length === 0 && (
-                                                        <div className="text-[9px] text-slate-500 italic px-1">هیچ نتیجه با کیفیتی یافت نشد.</div>
+                                                        <div className="text-[9px] text-surface-500 italic px-1">هیچ نتیجه با کیفیتی یافت نشد.</div>
                                                     )}
                                                 </div>
 
                                                 {/* Rejected Candidates */}
                                                 {data.retrievedCandidates.filter(c => !c.accepted).length > 0 && (
-                                                    <div className="space-y-1 pt-2 border-t border-slate-700/50">
+                                                    <div className="space-y-1 pt-2 border-t border-white/5">
                                                         <div className="text-[10px] font-bold text-rose-400 mb-1 flex justify-between">
                                                             <span>رد شده (امتیاز پایین)</span>
                                                             <span className="opacity-50 text-[9px]">Cross-Encoder Rejected</span> 
                                                         </div>
                                                         {data.retrievedCandidates.filter(c => !c.accepted).slice(0, 3).map((doc, i) => (
-                                                            <div key={i} className="flex items-center justify-between text-[9px] text-slate-500 bg-slate-800/30 p-1.5 rounded border border-slate-700/30 opacity-70 hover:opacity-100 transition-opacity">
-                                                                <span className="truncate max-w-[150px] line-through decoration-slate-600" title={doc.title}>{doc.title}</span>
+                                                            <div key={i} className="flex items-center justify-between text-[9px] text-surface-500 bg-surface-800/30 p-1.5 rounded border border-white/5 opacity-70 hover:opacity-100 transition-opacity">
+                                                                <span className="truncate max-w-[150px] line-through decoration-surface-600" title={doc.title}>{doc.title}</span>
                                                                 <span className="text-rose-900/70 font-mono">{toPersianDigits((doc.score * 100).toFixed(0))}%</span>
                                                             </div>
                                                         ))}

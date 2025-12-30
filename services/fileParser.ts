@@ -1,5 +1,5 @@
 
-import { KnowledgeChunk, BenchmarkCase } from '../types';
+import { KnowledgeChunk, BenchmarkCase, DocCategory } from '../types';
 import { cleanAndNormalizeText, classifyDocument, extractMetadata, chunkWhole, chunkQA, smartChunking, chunkMarkdown, classifyTextSegment, stripHtml, htmlToMarkdown } from './textProcessor';
 import { getEmbedding } from './ollama';
 import { saveChunksToDB } from './database';
@@ -90,12 +90,15 @@ export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
         const questionObj = entries[0];
         const answerObj = entries[entries.length - 1];
 
+        // Ensure title is present in the first object if available
+        const mainTitle = questionObj.title || entries.find(e => e.title)?.title || "";
+
         if (questionObj.body === answerObj.body) return;
 
         cases.push({
             id: `ticket-${ticketNum}`,
             category: 'Ticket Analysis',
-            question: `${questionObj.title ? `عنوان: ${questionObj.title}\n` : ''}متن تیکت: ${questionObj.body}`,
+            question: `${mainTitle ? `عنوان: ${mainTitle}\n` : ''}متن تیکت: ${questionObj.body}`,
             groundTruth: answerObj.body
         });
     });
@@ -145,6 +148,74 @@ export const parseBenchmarkDocx = async (file: File): Promise<BenchmarkCase[]> =
 };
 
 /**
+ * Public Helper to process CSV rows directly into KnowledgeChunks.
+ * Can be used by both general file import (auto-detect) and specific ticket import.
+ */
+export const parseTicketFile = async (
+    file: File, 
+    onProgress: (step: string, info?: any) => void
+): Promise<KnowledgeChunk[]> => {
+    // Using the robust logic from parseTicketCSV to get clean data
+    let ticketCases: BenchmarkCase[] = [];
+    try {
+        ticketCases = await parseTicketCSV(file);
+    } catch (e) {
+        throw new Error("CSV structure invalid. Needs TicketNum and Body.");
+    }
+
+    const chunks: KnowledgeChunk[] = [];
+    const total = ticketCases.length;
+
+    for (let i = 0; i < total; i++) {
+        const ticket = ticketCases[i];
+        
+        // Extract ID from "ticket-12345"
+        const ticketId = String(ticket.id).replace('ticket-', '');
+        
+        // Combine Question (User Issue) and Answer (Support Reply) for the chunk content
+        // We ensure the "Title" part from question is clearly visible at the top for graph weighting
+        // Note: ticket.question already includes "عنوان: ..." if parseTicketCSV found it.
+        const content = `شماره تیکت: ${ticketId}\n${ticket.question}\n\nپاسخ کارشناس:\n${ticket.groundTruth}`;
+        
+        const cleanedText = cleanAndNormalizeText(content);
+        // Simple classification for Tickets
+        const category = 'troubleshooting';
+        const subCategory = 'general_ticket';
+
+        const metadata = extractMetadata(cleanedText, `ticket-${ticketId}.csv`, category, subCategory);
+        metadata.ticketId = ticketId;
+
+        if (i % 20 === 0) onProgress('embedding', `Processing Ticket ${i+1}/${total}`);
+
+        let vector: number[] = [];
+        try {
+            // Use lighter embeddings or skip if latency is high, but here we keep quality
+            vector = await getEmbedding(cleanedText, false);
+        } catch (e) {
+            console.warn(`Failed to embed ticket ${ticketId}`);
+            vector = new Array(1024).fill(0);
+        }
+
+        chunks.push({
+            id: `ticket-chunk-${ticketId}-${Date.now()}`,
+            content: cleanedText,
+            searchContent: `Ticket ${ticketId} ${category} ${subCategory} \n ${cleanedText}`,
+            embedding: vector,
+            metadata: metadata,
+            source: {
+                id: file.name,
+                title: `تیکت ${ticketId}`,
+                snippet: ticket.question.substring(0, 100) + "...",
+                page: 1,
+                metadata: metadata
+            }
+        });
+    }
+
+    return chunks;
+};
+
+/**
  * Parses and processes a list of files into vector embeddings.
  */
 export const parseFiles = async (
@@ -159,20 +230,41 @@ export const parseFiles = async (
   for (const file of files) {
     if (signal?.aborted) throw new Error("ABORTED");
 
-    const fileChunks: KnowledgeChunk[] = [];
     try {
       if (onProgress) onProgress(file.name, 'reading', 'Initializing stream...');
       
+      // SPECIAL HANDLING FOR TICKET CSV
+      // If user uploads a CSV here, we assume they might want to index it generally.
+      // But for the specific "Ticket Analysis" feature, use `parseTicketFile` directly in the component.
+      if (file.name.toLowerCase().endsWith('.csv')) {
+          try {
+              const ticketChunks = await parseTicketFile(file, (step, info) => {
+                  if (onProgress) onProgress(file.name, step as any, info);
+              });
+              
+              if (ticketChunks.length > 0) {
+                  chunks.push(...ticketChunks);
+                  if (onProgress) onProgress(file.name, 'complete', { 
+                      count: ticketChunks.length, 
+                      category: 'troubleshooting', 
+                      subCategory: 'csv_import' 
+                  });
+                  await saveChunksToDB(ticketChunks); // Save to GENERAL DB
+                  continue; // Skip normal processing
+              }
+          } catch (e) {
+              console.warn("CSV was not a valid Ticket export, falling back to text parsing.", e);
+              // Fallthrough to normal parsing
+          }
+      }
+
       let rawText = '';
       const fileName = file.name;
 
-      // IMPROVED: Use convertToHtml + markdown for DOCX to preserve tables
       if (fileName.toLowerCase().endsWith('.docx')) {
         if (typeof mammoth !== 'undefined') {
           const arrayBuffer = await file.arrayBuffer();
-          // Extract HTML to preserve tables
           const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-          // Convert HTML to Markdown-ish text to keep structure
           rawText = htmlToMarkdown(result.value);
         } else {
           throw new Error("Mammoth library missing for docx");
@@ -200,7 +292,6 @@ export const parseFiles = async (
       const fileMetadata = extractMetadata(cleanedText, fileName, initialClass.category, initialClass.subCategory);
       
       let parentChunks: string[] = [];
-      // Always use chunkMarkdown for docx now as well, since we converted it to markdown-like text
       if (fileName.toLowerCase().endsWith('.md') || fileName.toLowerCase().endsWith('.docx')) {
           if (onProgress) onProgress(file.name, 'reading', 'Applying Structural Analysis...');
           parentChunks = chunkMarkdown(cleanedText, settings.chunkSize, settings.chunkOverlap);
@@ -214,6 +305,8 @@ export const parseFiles = async (
 
       if (onProgress) onProgress(file.name, 'embedding', `Chunking strategy applied. ${parentChunks.length} segments.`);
       
+      const fileChunks: KnowledgeChunk[] = []; // Local accumulator for this file
+
       for (let i = 0; i < parentChunks.length; i++) {
         if (signal?.aborted) throw new Error("ABORTED");
 
@@ -259,7 +352,6 @@ export const parseFiles = async (
             const newChunk: KnowledgeChunk = {
                 id: `${file.name}-${i}-${j}-${Date.now()}`,
                 content: parentContent,      
-                // CRITICAL FIX: Inject context into searchContent so keyword matching works on metadata too
                 searchContent: `${contextHeader}${extraMeta}\n${childContent}`, 
                 embedding: vector,
                 metadata: chunkMeta,

@@ -1,19 +1,34 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { KnowledgeChunk, GraphNode, GraphLink, GraphLayoutMode } from '../types';
-import { categoryLabels, subCategoryLabels, prepareGraphData, prepareSchemaGraphData, prepareGraphRagData, prepareGalaxyGraphData } from '../services/graphEngine';
-import { Network, ZoomIn, ZoomOut, RefreshCw, Workflow, Search, X, Filter, Box, FileText, Tag, ArrowRight, Zap } from 'lucide-react';
+import { categoryLabels, subCategoryLabels, prepareGraphData, prepareSchemaGraphData, prepareGraphRagData, prepareGalaxyGraphData, prepareTicketGraphData } from '../services/graphEngine';
+import { Network, ZoomIn, ZoomOut, RefreshCw, Workflow, Search, X, Filter, Box, FileText, Tag, ArrowRight, Zap, PieChart, Activity, AlertCircle, Ticket, Upload, Trash2 } from 'lucide-react';
+import { toPersianDigits } from '../services/textProcessor';
 
 interface KnowledgeGraphProps {
   chunks: KnowledgeChunk[];
+  ticketChunks?: KnowledgeChunk[]; // Prop for isolated tickets
   layoutMode: GraphLayoutMode;
   onNodeSelect?: (node: GraphNode) => void; 
   onNodeAction?: (action: 'analyze' | 'ask', node: GraphNode) => void;
+  onImportTickets?: (files: FileList) => void;
+  onClearTickets?: () => void;
+  theme?: 'light' | 'dark';
 }
 
-const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onNodeSelect, onNodeAction }) => {
+const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ 
+    chunks, 
+    ticketChunks = [],
+    layoutMode, 
+    onNodeSelect, 
+    onNodeAction, 
+    onImportTickets,
+    onClearTickets,
+    theme = 'dark' 
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ticketInputRef = useRef<HTMLInputElement>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -42,10 +57,17 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
 
   // 1. Initialize Graph Data
   useEffect(() => {
-    if (chunks.length === 0) {
+    // If we are in Ticket Mode but no tickets, do nothing (UI will show upload screen)
+    if (layoutMode === 'tickets' && ticketChunks.length === 0) {
         simulationData.current = { nodes: [], links: [], treeLinks: [], networkLinks: [], topicLinks: [] };
         return;
     }
+
+    if (layoutMode !== 'tickets' && chunks.length === 0) {
+        simulationData.current = { nodes: [], links: [], treeLinks: [], networkLinks: [], topicLinks: [] };
+        return;
+    }
+
     alphaRef.current = 1.0; 
     setSelectedNode(null);
     
@@ -54,6 +76,18 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
         simulationData.current = {
             nodes: schemaData.nodes,
             links: schemaData.links,
+            treeLinks: [],
+            networkLinks: [],
+            topicLinks: []
+        };
+        setTransform({ x: 0, y: 0, k: 0.6 });
+        targetTransform.current = { x: 0, y: 0, k: 0.6 };
+    } else if (layoutMode === 'tickets') {
+        // Use separate ticket store
+        const ticketData = prepareTicketGraphData(ticketChunks);
+        simulationData.current = {
+            nodes: ticketData.nodes,
+            links: ticketData.links,
             treeLinks: [],
             networkLinks: [],
             topicLinks: []
@@ -88,7 +122,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
         targetTransform.current = { x: 0, y: 0, k: 0.6 };
     }
 
-  }, [chunks, visibleCategories, layoutMode]);
+  }, [chunks, ticketChunks, visibleCategories, layoutMode]);
 
   // 2. Resize Handler
   useEffect(() => {
@@ -174,7 +208,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
       }
 
       if (isDraggingRef.current) {
-          if (dragTargetRef.current && (layoutMode === 'graphrag' || layoutMode === 'schema')) {
+          if (dragTargetRef.current && (layoutMode === 'graphrag' || layoutMode === 'schema' || layoutMode === 'tickets')) {
               dragTargetRef.current.x = x;
               dragTargetRef.current.y = y;
               dragTargetRef.current.vx = 0;
@@ -240,7 +274,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
       let activeLinks = links;
       if (layoutMode === 'tree') activeLinks = treeLinks;
       if (layoutMode === 'graphrag') activeLinks = links;
-      if (layoutMode === 'schema') activeLinks = links;
+      if (layoutMode === 'schema' || layoutMode === 'tickets') activeLinks = links;
       if (layoutMode === 'galaxy') activeLinks = links;
 
       const activeNodes = nodes;
@@ -250,11 +284,12 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
           if (alphaRef.current < 0.005) alphaRef.current = 0;
       }
 
-      const isForceMode = layoutMode === 'graphrag' || layoutMode === 'schema' || layoutMode === 'galaxy';
+      const isForceMode = layoutMode === 'graphrag' || layoutMode === 'schema' || layoutMode === 'galaxy' || layoutMode === 'tickets';
       const shouldRunPhysics = isForceMode && alphaRef.current > 0;
 
       const DAMPING = 0.5;
-      const REPULSION = (layoutMode === 'schema') ? 1500 : (layoutMode === 'galaxy' ? 200 : 800);
+      // Adjusted Physics for Schema Aggregation (Nodes are larger)
+      const REPULSION = (layoutMode === 'schema' || layoutMode === 'tickets') ? 3000 : (layoutMode === 'galaxy' ? 200 : 800);
       const TARGET_SPEED = 2;
       const CURRENT_MAX_SPEED = TARGET_SPEED * Math.max(0.1, alphaRef.current);
 
@@ -265,7 +300,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
           } 
           else if (shouldRunPhysics) {
              if (!isDraggingRef.current || n !== dragTargetRef.current) {
-                 if ((layoutMode === 'schema' && n.group === 'System') || (layoutMode === 'galaxy' && n.group === 'galaxy-star')) {
+                 if ((layoutMode === 'schema' && n.group === 'System') || (layoutMode === 'galaxy' && n.group === 'galaxy-star') || (layoutMode === 'tickets' && n.group === 'System')) {
                     if (n.targetX !== undefined) n.x += (n.targetX - n.x) * 0.05;
                     if (n.targetY !== undefined) n.y += (n.targetY - n.y) * 0.05;
                  }
@@ -278,12 +313,20 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
                          const dx = n.x - other.x;
                          const dy = n.y - other.y;
                          let d = dx*dx + dy*dy;
-                         if (d > 60000) continue; 
+                         if (d > 60000 && layoutMode !== 'schema' && layoutMode !== 'tickets') continue; // Schema needs larger influence
                          if (d < 1) d = 1;
                          const dist = Math.sqrt(d);
+                         const minDistance = n.radius + other.radius + 10; // Avoid overlap
                          const f = REPULSION / (dist + 100); 
-                         n.vx += (dx/dist) * f;
-                         n.vy += (dy/dist) * f;
+                         
+                         let repulsionForce = f;
+                         // Extra push if overlapping
+                         if (dist < minDistance) {
+                             repulsionForce *= 3;
+                         }
+
+                         n.vx += (dx/dist) * repulsionForce;
+                         n.vy += (dy/dist) * repulsionForce;
                      }
 
                      for (const link of activeLinks) {
@@ -296,7 +339,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
                                  const dist = Math.sqrt(dx*dx + dy*dy);
                                  
                                  let targetDist = 100;
-                                 if (layoutMode === 'schema') targetDist = 150;
+                                 if (layoutMode === 'schema' || layoutMode === 'tickets') targetDist = n.radius + other.radius + 50;
                                  if (layoutMode === 'galaxy') targetDist = link.type === 'gravity' ? 400 : 120; 
 
                                  const force = (dist - targetDist) * 0.01; 
@@ -322,12 +365,12 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
           }
       }
 
-      // --- DARK MODE RENDERING ---
-      // 1. Background Fill
-      ctx.fillStyle = '#020617'; // Surface-950
+      // --- RENDERING ---
+      // 1. Background Fill (Theme Dependent)
+      ctx.fillStyle = theme === 'dark' ? '#020617' : '#f8fafc'; // Surface-950 vs Surface-50
       ctx.fillRect(0, 0, width, height);
       
-      // 2. Starfield Effect (Subtle)
+      // 2. Starfield Effect (Subtle - only in dark mode or very subtle in light)
       ctx.save();
       const time = Date.now() * 0.0005;
       for(let i=0; i<50; i++) {
@@ -335,7 +378,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
           const px = (Math.sin(i * 132.1) * width + width/2 + transform.x * 0.05) % width;
           const py = (Math.cos(i * 43.7) * height + height/2 + transform.y * 0.05) % height;
           const alpha = 0.1 + Math.abs(Math.sin(time + i)) * 0.2;
-          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.fillStyle = theme === 'dark' ? `rgba(255,255,255,${alpha})` : `rgba(71, 85, 105, ${alpha * 0.5})`;
           ctx.arc(Math.abs(px), Math.abs(py), Math.random() * 1.5, 0, Math.PI*2);
           ctx.fill();
       }
@@ -363,14 +406,14 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
           if (core) {
               const systems = activeNodes.filter(n => n.group === 'galaxy-star');
               ctx.beginPath();
-              ctx.strokeStyle = 'rgba(99, 102, 241, 0.1)'; // Brand color trace
+              ctx.strokeStyle = theme === 'dark' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)';
               ctx.lineWidth = 1;
               ctx.arc(core.x, core.y, 400, 0, Math.PI * 2);
               ctx.stroke();
 
               systems.forEach(sys => {
                   ctx.beginPath();
-                  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+                  ctx.strokeStyle = theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
                   ctx.setLineDash([5, 15]); 
                   ctx.arc(sys.x, sys.y, 120, 0, Math.PI * 2); 
                   ctx.stroke();
@@ -381,6 +424,9 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
 
       ctx.lineWidth = (layoutMode === 'tree') ? 1.5 : 1;
       
+      // Link Colors
+      const baseLinkColor = theme === 'dark' ? '148, 163, 184' : '100, 116, 139'; // Slate-400 vs Slate-500
+
       for (const link of activeLinks) {
           const s = activeNodes.find(n => n.id === link.source);
           const t = activeNodes.find(n => n.id === link.target);
@@ -389,7 +435,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
 
               let opacity = layoutMode === 'tree' ? 0.3 : 0.2; 
               if (link.type === 'cross') opacity = 0.4;
-              if (layoutMode === 'schema') opacity = 0.2;
+              if (layoutMode === 'schema' || layoutMode === 'tickets') opacity = 0.4; // Schema links more visible
               if (layoutMode === 'galaxy') opacity = 0.08; 
 
               const sDim = shouldDim(s);
@@ -402,24 +448,29 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
                   opacity = layoutMode === 'galaxy' ? 0.5 : 0.8;
                   ctx.lineWidth = 2;
                   ctx.shadowBlur = 5;
-                  ctx.shadowColor = '#fff';
+                  ctx.shadowColor = theme === 'dark' ? '#fff' : '#000';
               } else {
                   ctx.lineWidth = 1;
                   ctx.shadowBlur = 0;
               }
 
-              if (link.type === 'SOLVES') {
+              if (layoutMode === 'schema' || layoutMode === 'tickets') {
+                  // Schema View Links
+                  ctx.strokeStyle = `rgba(${baseLinkColor}, ${opacity})`;
+                  // Use thickness for severity if applicable, but for cleanliness keep it constant for now
+                  ctx.lineWidth = 1.5;
+              } else if (link.type === 'SOLVES') {
                   ctx.strokeStyle = `rgba(52, 211, 153, ${opacity})`; // Emerald
                   ctx.setLineDash([]);
               } else if (link.type === 'CAUSED_BY') {
                   ctx.strokeStyle = `rgba(248, 113, 113, ${opacity})`; // Red
                   ctx.setLineDash([2, 2]);
               } else if (layoutMode === 'galaxy') {
-                   ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
+                   ctx.strokeStyle = theme === 'dark' ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity})`;
                    ctx.setLineDash([]);
               } else {
                   ctx.setLineDash([]);
-                  ctx.strokeStyle = `rgba(148, 163, 184, ${opacity})`; // Slate-400
+                  ctx.strokeStyle = `rgba(${baseLinkColor}, ${opacity})`; 
               }
 
               if (layoutMode === 'galaxy' && (s.group === 'core' || t.group === 'core')) continue;
@@ -434,7 +485,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
       }
 
       for (const node of activeNodes) {
-          if (layoutMode !== 'tree' && node.group === 'root' && layoutMode !== 'galaxy') continue;
+          if (layoutMode !== 'tree' && node.group === 'root' && layoutMode !== 'galaxy' && layoutMode !== 'tickets') continue;
 
           let opacity = 1;
           if (shouldDim(node)) opacity = 0.15;
@@ -446,9 +497,16 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
               
               if (node.group === 'core') {
                   const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, node.radius);
-                  gradient.addColorStop(0, '#ffffff');
-                  gradient.addColorStop(0.4, '#818cf8'); // Brand color
-                  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+                  if (theme === 'dark') {
+                      gradient.addColorStop(0, '#ffffff');
+                      gradient.addColorStop(0.4, '#818cf8'); // Brand color
+                      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+                  } else {
+                      gradient.addColorStop(0, '#4f46e5');
+                      gradient.addColorStop(0.4, '#818cf8');
+                      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+                  }
+                  
                   ctx.fillStyle = gradient;
                   ctx.beginPath();
                   ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
@@ -464,7 +522,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
               if (node === selectedNode) {
                   ctx.shadowBlur = 0;
                   ctx.globalAlpha = 1;
-                  ctx.strokeStyle = '#ffffff';
+                  ctx.strokeStyle = theme === 'dark' ? '#ffffff' : '#000000';
                   ctx.lineWidth = 1.5;
                   const time = Date.now() * 0.002;
                   
@@ -483,11 +541,8 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
               
               // Shapes based on type
               if (node.group === 'Issue') {
-                  const r = node.radius;
-                  ctx.moveTo(node.x, node.y - r);
-                  ctx.lineTo(node.x + r, node.y + r);
-                  ctx.lineTo(node.x - r, node.y + r);
-                  ctx.closePath();
+                  // In Aggregated Schema View, Issue nodes are distinct circles to show weight
+                  ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
               } else if (node.group === 'Action') {
                   const r = node.radius * 0.8;
                   ctx.rect(node.x - r, node.y - r, r*2, r*2);
@@ -514,11 +569,11 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
                   ctx.shadowBlur = 15;
                   ctx.shadowColor = node.color;
                   ctx.lineWidth = 2;
-                  ctx.strokeStyle = '#fff';
+                  ctx.strokeStyle = theme === 'dark' ? '#fff' : '#000';
                   ctx.stroke();
                   ctx.shadowBlur = 0;
               } else {
-                  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                  ctx.strokeStyle = theme === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)';
                   ctx.lineWidth = 1;
                   ctx.stroke();
               }
@@ -526,9 +581,11 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
           ctx.globalAlpha = 1;
 
           const isCategory = node.group === 'category' || node.group === 'root' || node.group === 'System' || node.group === 'galaxy-star' || node.group === 'core';
+          
+          // Improved Label Visibility Logic
           const showLabel = 
             isCategory || 
-            (node.group === 'Issue' && transform.k > 0.5) ||
+            (node.group === 'Issue' && transform.k > 0.4) || // Show Issues earlier in Schema mode
             (node.group === 'Action' && transform.k > 0.5) ||
             (node.group === 'Module' && transform.k > 0.5) ||
             (node.group === 'Concept' && transform.k > 0.6) ||
@@ -538,36 +595,45 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
 
           if (showLabel && opacity > 0.2) {
               let font = '12px Vazirmatn';
-              let fillStyle = '#cbd5e1'; // Light text for dark background
+              let fillStyle = theme === 'dark' ? '#cbd5e1' : '#475569'; // Slate-300 vs Slate-600
 
               if (node.group === 'System' || node.group === 'core') {
-                  font = 'bold 14px Vazirmatn';
-                  fillStyle = '#ffffff';
+                  font = 'bold 16px Vazirmatn'; // Larger system font
+                  fillStyle = theme === 'dark' ? '#ffffff' : '#1e293b';
               } else if (node.group === 'Issue') {
-                  font = 'bold 11px Vazirmatn';
-                  fillStyle = '#fca5a5'; // Light Red
+                  // Scale font based on severity (radius)
+                  const fontSize = Math.max(10, Math.min(16, node.radius / 2));
+                  font = `bold ${fontSize}px Vazirmatn`;
+                  fillStyle = '#ffffff'; // White text for issues to stand out
               } else if (node.group === 'galaxy-star') {
                   font = 'bold 12px Vazirmatn';
-                  fillStyle = '#ffffff';
+                  fillStyle = theme === 'dark' ? '#ffffff' : '#1e293b';
               }
 
               ctx.font = font;
               ctx.textAlign = 'center';
-              const text = node.label;
+              const text = node.fullLabel || node.label; // Prefer full label (with count) if available
               const metrics = ctx.measureText(text);
               
-              // Dark background pill for text
+              // Background pill for text
               if (layoutMode !== 'galaxy' || node === hoverNodeRef.current) {
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'; // Surface-900 transparent
+                  ctx.fillStyle = theme === 'dark' ? 'rgba(15, 23, 42, 0.8)' : 'rgba(255, 255, 255, 0.8)';
                   const pad = 6;
                   const rectY = node.y + node.radius + 8;
                   // Rounded rect simulation
-                  ctx.roundRect(node.x - metrics.width/2 - pad, rectY, metrics.width + pad*2, 20, 6);
+                  ctx.roundRect(node.x - metrics.width/2 - pad, rectY, metrics.width + pad*2, 24, 6);
                   ctx.fill();
+                  
+                  // Border for light mode pill
+                  if (theme === 'light') {
+                      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                      ctx.lineWidth = 1;
+                      ctx.stroke();
+                  }
               }
 
               ctx.fillStyle = fillStyle;
-              ctx.fillText(text, node.x, node.y + node.radius + 22);
+              ctx.fillText(text, node.x, node.y + node.radius + 24);
           }
       }
 
@@ -577,7 +643,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
 
     animate();
     return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
-  }, [chunks, transform, layoutMode, searchQuery, selectedNode, visibleCategories]);
+  }, [chunks, ticketChunks, transform, layoutMode, searchQuery, selectedNode, visibleCategories, theme]);
 
 
   const handleZoomIn = () => {
@@ -595,9 +661,42 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
       setSelectedNode(null);
   };
 
-  if (chunks.length === 0) {
+  // --- EMPTY STATE FOR TICKET MODE ---
+  if (layoutMode === 'tickets' && ticketChunks.length === 0) {
       return (
-          <div className="flex flex-col items-center justify-center h-full text-surface-500">
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-surface-500 animate-in fade-in" dir="rtl">
+              <div className="w-24 h-24 bg-surface-100 dark:bg-surface-800 rounded-full flex items-center justify-center mb-6 shadow-inner border border-surface-200 dark:border-surface-700">
+                  <Ticket className="w-10 h-10 text-brand-500 opacity-80" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-700 dark:text-white mb-2">تحلیل هوشمند تیکت‌ها</h3>
+              <p className="text-sm text-slate-500 dark:text-surface-400 max-w-md text-center leading-7 mb-8">
+                  برای مشاهده گراف توزیع مشکلات، لطفاً فایل خروجی تیکت‌ها (CSV) را آپلود کنید.
+                  <br />
+                  <span className="text-xs opacity-70">سیستم به صورت خودکار تیکت‌ها را دسته‌بندی و تحلیل می‌کند.</span>
+              </p>
+              
+              <input 
+                  type="file" 
+                  ref={ticketInputRef}
+                  className="hidden"
+                  accept=".csv"
+                  onChange={(e) => e.target.files && onImportTickets?.(e.target.files)}
+              />
+              <button 
+                  onClick={() => ticketInputRef.current?.click()}
+                  className="bg-brand-600 hover:bg-brand-500 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-brand-500/30 transition-all transform hover:scale-105 flex items-center gap-2"
+              >
+                  <Upload className="w-5 h-5" />
+                  آپلود فایل تیکت (.csv)
+              </button>
+          </div>
+      );
+  }
+
+  // --- EMPTY STATE GENERAL ---
+  if (chunks.length === 0 && ticketChunks.length === 0) {
+      return (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-surface-500">
               <Network className="w-16 h-16 mb-4 opacity-50" />
               <p>داده‌ای برای نمایش وجود ندارد.</p>
           </div>
@@ -610,42 +709,83 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
       
       const isFile = selectedNode.group === 'file' || selectedNode.group === 'galaxy-planet';
       const isCategory = selectedNode.group === 'galaxy-star' || selectedNode.group === 'category';
+      const isSystem = selectedNode.group === 'System';
+      const isAggIssue = selectedNode.metadata?.type === 'aggregated_issue';
       
-      if (!isFile && !isCategory) return null;
-
       return (
-          <div className="absolute top-4 right-4 z-20 w-72 glass-panel rounded-2xl text-surface-200 p-5 shadow-2xl animate-in slide-in-from-right-4 fade-in duration-300" dir="rtl">
+          <div className="absolute top-4 right-4 z-20 w-72 bg-white/90 dark:bg-surface-900/80 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-2xl text-slate-800 dark:text-surface-200 p-5 shadow-2xl animate-in slide-in-from-right-4 fade-in duration-300" dir="rtl">
               <button 
                   onClick={() => setSelectedNode(null)}
-                  className="absolute top-3 left-3 text-surface-400 hover:text-white transition-colors"
+                  className="absolute top-3 left-3 text-slate-400 dark:text-surface-400 hover:text-slate-800 dark:hover:text-white transition-colors"
               >
                   <X className="w-4 h-4" />
               </button>
               
-              <div className="mb-4 pr-1 border-b border-white/10 pb-3">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-brand-300 mb-1 block">
-                      {isCategory ? 'منظومه دانشی' : 'سیاره دانشی (سند)'}
+              <div className="mb-4 pr-1 border-b border-slate-200 dark:border-white/10 pb-3">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-brand-600 dark:text-brand-300 mb-1 block">
+                      {isCategory ? 'منظومه دانشی' : (isSystem ? 'سامانه' : (isAggIssue ? 'خوشه مشکلات' : 'سند دانشی'))}
                   </span>
-                  <h3 className="text-lg font-bold leading-tight text-white">{selectedNode.fullLabel || selectedNode.label}</h3>
+                  <h3 className="text-lg font-bold leading-tight text-slate-900 dark:text-white">{selectedNode.label}</h3>
               </div>
 
               <div className="space-y-4 text-sm">
+                  {/* Aggregated Issue View */}
+                  {isAggIssue && selectedNode.metadata && (
+                      <>
+                        <div className="flex items-center justify-between bg-slate-50 dark:bg-surface-800/50 p-3 rounded-lg border border-slate-100 dark:border-white/5">
+                            <span className="text-xs text-slate-500 dark:text-surface-400">سیستم مرتبط:</span>
+                            <span className="font-bold text-slate-800 dark:text-white">{selectedNode.metadata.parentSystem}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-slate-50 dark:bg-surface-800/50 p-3 rounded-lg border border-slate-100 dark:border-white/5 flex flex-col items-center">
+                                <span className="text-[10px] text-slate-500 dark:text-surface-400 mb-1">تعداد تکرار</span>
+                                <span className="text-xl font-bold text-slate-800 dark:text-white font-mono">{toPersianDigits(selectedNode.chunkCount)}</span>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-surface-800/50 p-3 rounded-lg border border-slate-100 dark:border-white/5 flex flex-col items-center">
+                                <span className="text-[10px] text-slate-500 dark:text-surface-400 mb-1">سهم از کل</span>
+                                <span className="text-xl font-bold text-red-500 dark:text-red-400 font-mono">{toPersianDigits(selectedNode.metadata.percentage)}%</span>
+                            </div>
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-surface-300 leading-5 mt-2">
+                            این مشکل یکی از عوامل اصلی اختلال در سامانه {selectedNode.metadata.parentSystem} است. برای تحلیل ریشه‌ای، دکمه زیر را بزنید.
+                        </div>
+                      </>
+                  )}
+
+                  {/* System Anchor View */}
+                  {isSystem && selectedNode.metadata && (
+                      <>
+                        <div className="bg-slate-50 dark:bg-surface-800/50 p-4 rounded-lg border border-slate-100 dark:border-white/5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Activity className="w-5 h-5 text-brand-500 dark:text-brand-400" />
+                                <div>
+                                    <span className="block text-xs text-slate-500 dark:text-surface-400">تیکت‌های ثبت شده</span>
+                                    <span className="text-lg font-bold text-slate-800 dark:text-white">{toPersianDigits(selectedNode.metadata.totalIssues)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-surface-400 mt-2">
+                            این سامانه مرجع اصلی برای دسته‌بندی مشکلات در گراف طرح‌واره است.
+                        </div>
+                      </>
+                  )}
+
                   {isFile && selectedNode.metadata && (
                       <>
-                          <div className="flex items-center gap-2 text-xs text-surface-300">
-                              <Box className="w-3 h-3 text-brand-400" />
+                          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-surface-300">
+                              <Box className="w-3 h-3 text-brand-500 dark:text-brand-400" />
                               <span>دسته: {selectedNode.metadata.category}</span>
                           </div>
                           {selectedNode.metadata.ticketId && (
-                              <div className="flex items-center gap-2 text-xs text-amber-300">
+                              <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-300">
                                   <Tag className="w-3 h-3" />
                                   <span>تیکت: {selectedNode.metadata.ticketId}</span>
                               </div>
                           )}
                           
-                          <div className="bg-surface-800/50 p-3 rounded-lg border border-white/5 mt-2">
-                              <span className="text-[10px] text-surface-400 block mb-1">تعداد قطعات (Chunks)</span>
-                              <div className="flex items-center gap-2 font-mono text-emerald-400 font-bold">
+                          <div className="bg-slate-50 dark:bg-surface-800/50 p-3 rounded-lg border border-slate-100 dark:border-white/5 mt-2">
+                              <span className="text-[10px] text-slate-500 dark:text-surface-400 block mb-1">تعداد قطعات (Chunks)</span>
+                              <div className="flex items-center gap-2 font-mono text-emerald-600 dark:text-emerald-400 font-bold">
                                   <FileText className="w-4 h-4" />
                                   {selectedNode.chunkCount}
                               </div>
@@ -654,8 +794,8 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
                   )}
 
                   {isCategory && (
-                      <div className="text-xs text-surface-300 leading-5 bg-surface-800/50 p-3 rounded-lg border border-white/5">
-                          این خوشه حاوی <span className="text-brand-300 font-bold">{selectedNode.chunkCount}</span> قطعه اطلاعاتی مرتبط با موضوع {selectedNode.label} است.
+                      <div className="text-xs text-slate-600 dark:text-surface-300 leading-5 bg-slate-50 dark:bg-surface-800/50 p-3 rounded-lg border border-slate-100 dark:border-white/5">
+                          این خوشه حاوی <span className="text-brand-600 dark:text-brand-300 font-bold">{selectedNode.chunkCount}</span> قطعه اطلاعاتی مرتبط با موضوع {selectedNode.label} است.
                       </div>
                   )}
                   
@@ -663,14 +803,14 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
                   <div className="pt-2 flex flex-col gap-2">
                       <button 
                           onClick={() => onNodeAction?.('analyze', selectedNode)}
-                          className="w-full bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 group shadow-lg shadow-brand-900/50"
+                          className="w-full bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 group shadow-lg shadow-brand-500/20 dark:shadow-brand-900/50"
                       >
                           <Zap className="w-3 h-3 group-hover:text-yellow-300" />
                           <span>تحلیل هوشمند این گره</span>
                       </button>
                       {isFile && (
                           <button 
-                            className="w-full bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-white/5"
+                            className="w-full bg-slate-100 dark:bg-surface-800 hover:bg-slate-200 dark:hover:bg-surface-700 text-slate-600 dark:text-surface-300 hover:text-slate-900 dark:hover:text-white py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-white/5"
                             onClick={() => onNodeAction?.('ask', selectedNode)}
                           >
                               <ArrowRight className="w-3 h-3" />
@@ -684,25 +824,25 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
   };
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden cursor-move bg-surface-950" dir="ltr">
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden cursor-move bg-slate-50 dark:bg-surface-950 transition-colors duration-300" dir="ltr">
       {/* Search Bar (Floating Glass) */}
       <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20 w-96 max-w-full">
           <div className="relative group">
               <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                  <Search className="w-4 h-4 text-surface-400 group-focus-within:text-brand-400 transition-colors" />
+                  <Search className="w-4 h-4 text-slate-400 dark:text-surface-400 group-focus-within:text-brand-500 transition-colors" />
               </div>
               <input 
                   type="text" 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="جستجو در گراف (نام فایل، تیکت...)"
-                  className="w-full pl-10 pr-4 py-2.5 bg-surface-900/80 backdrop-blur border border-white/10 rounded-full shadow-lg text-sm text-white placeholder-surface-500 focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all text-right"
+                  className="w-full pl-10 pr-4 py-2.5 bg-white/80 dark:bg-surface-900/80 backdrop-blur border border-slate-200 dark:border-white/10 rounded-full shadow-lg text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-surface-500 focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all text-right"
                   dir="rtl"
               />
               {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
-                    className="absolute inset-y-0 right-3 flex items-center text-surface-400 hover:text-white"
+                    className="absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-surface-400 hover:text-slate-800 dark:hover:text-white"
                   >
                       <X className="w-3 h-3" />
                   </button>
@@ -711,63 +851,80 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ chunks, layoutMode, onN
       </div>
 
       {/* Controls (Glass) */}
-      <div className="absolute bottom-6 right-6 z-10 flex flex-col gap-2 glass-panel p-2 rounded-xl shadow-2xl">
+      <div className="absolute bottom-6 right-6 z-10 flex flex-col gap-2 bg-white/80 dark:bg-surface-900/60 backdrop-blur-md border border-slate-200 dark:border-white/5 p-2 rounded-xl shadow-2xl">
         
+        {/* Ticket Specific Clear Button */}
+        {layoutMode === 'tickets' && ticketChunks.length > 0 && (
+            <>
+                <button 
+                    onClick={onClearTickets}
+                    className="p-2.5 rounded-lg transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" 
+                    title="حذف داده‌های تیکت"
+                >
+                    <Trash2 className="w-5 h-5" />
+                </button>
+                <div className="w-full h-px bg-slate-200 dark:bg-white/10 my-1"></div>
+            </>
+        )}
+
         {layoutMode === 'tree' && (
             <>
                 <button 
                     onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)} 
-                    className={`p-2.5 rounded-lg transition-colors ${isFilterMenuOpen ? 'bg-brand-500/20 text-brand-300' : 'hover:bg-white/10 text-surface-400'}`} 
+                    className={`p-2.5 rounded-lg transition-colors ${isFilterMenuOpen ? 'bg-brand-500/20 text-brand-600 dark:text-brand-300' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-surface-400'}`} 
                     title="فیلتر دسته‌ها"
                 >
                     <Filter className="w-5 h-5" />
                 </button>
-                <div className="w-full h-px bg-white/10 my-1"></div>
+                <div className="w-full h-px bg-slate-200 dark:bg-white/10 my-1"></div>
             </>
         )}
         
-        <button onClick={handleZoomIn} className="p-2.5 hover:bg-white/10 rounded-lg text-surface-400 hover:text-white transition-colors"><ZoomIn className="w-5 h-5" /></button>
-        <button onClick={handleZoomOut} className="p-2.5 hover:bg-white/10 rounded-lg text-surface-400 hover:text-white transition-colors"><ZoomOut className="w-5 h-5" /></button>
-        <button onClick={handleReset} className="p-2.5 hover:bg-white/10 rounded-lg text-surface-400 hover:text-white transition-colors"><RefreshCw className="w-5 h-5" /></button>
+        <button onClick={handleZoomIn} className="p-2.5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-surface-400 hover:text-slate-800 dark:hover:text-white transition-colors"><ZoomIn className="w-5 h-5" /></button>
+        <button onClick={handleZoomOut} className="p-2.5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-surface-400 hover:text-slate-800 dark:hover:text-white transition-colors"><ZoomOut className="w-5 h-5" /></button>
+        <button onClick={handleReset} className="p-2.5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-surface-400 hover:text-slate-800 dark:hover:text-white transition-colors"><RefreshCw className="w-5 h-5" /></button>
       </div>
 
       {/* Legend (Glass) */}
-      <div className="absolute bottom-6 left-6 z-10 glass-panel p-4 rounded-xl shadow-2xl text-xs pointer-events-none select-none transition-opacity duration-300" style={{ opacity: selectedNode ? 0 : 1 }} dir="rtl">
-         <h4 className="font-bold mb-3 text-white">راهنمای گراف</h4>
+      <div className="absolute bottom-6 left-6 z-10 bg-white/80 dark:bg-surface-900/60 backdrop-blur-md border border-slate-200 dark:border-white/5 p-4 rounded-xl shadow-2xl text-xs pointer-events-none select-none transition-opacity duration-300" style={{ opacity: selectedNode ? 0 : 1 }} dir="rtl">
+         <h4 className="font-bold mb-3 text-slate-800 dark:text-white">راهنمای گراف</h4>
          
-         {layoutMode === 'schema' ? (
+         {layoutMode === 'schema' || layoutMode === 'tickets' ? (
              <>
-                 <div className="flex items-center gap-2 mb-2 text-surface-300">
-                     <span className="w-3 h-3 rounded-full bg-blue-700 border border-white/20 shadow-sm"></span>
+                 <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
+                     <span className="w-3 h-3 rounded-full bg-blue-500 border border-black/10 dark:border-white/20 shadow-sm"></span>
                      <span>سامانه (System)</span>
                  </div>
-                 <div className="flex items-center gap-2 mb-2 text-surface-300">
-                     <span className="w-3 h-3 bg-amber-500 border border-white/20 shadow-sm" style={{clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'}}></span>
-                     <span>مولفه (Module)</span>
+                 <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
+                     <span className="w-4 h-4 rounded-full bg-red-500 border border-black/10 dark:border-white/20 shadow-sm"></span>
+                     <span>مشکل حاد (Major Issue)</span>
                  </div>
-                 <div className="flex items-center gap-2 mb-2 text-surface-300">
-                     <span className="w-3 h-3 bg-red-500 border border-white/20 shadow-sm transform rotate-45"></span>
-                     <span>مشکل (Issue)</span>
+                 <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
+                     <span className="w-2 h-2 rounded-full bg-red-300 border border-black/10 dark:border-white/20 shadow-sm"></span>
+                     <span>مشکل جزئی (Minor Issue)</span>
+                 </div>
+                 <div className="text-[10px] text-slate-400 dark:text-surface-500 mt-2 opacity-80">
+                     * اندازه دایره نشان‌دهنده تعداد تکرار است.
                  </div>
              </>
          ) : layoutMode === 'galaxy' ? (
              <>
-                <div className="flex items-center gap-2 mb-2 text-surface-300">
-                    <span className="w-3 h-3 rounded-full bg-white shadow-[0_0_10px_white]"></span>
+                <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
+                    <span className="w-3 h-3 rounded-full bg-white shadow-[0_0_10px_black] dark:shadow-[0_0_10px_white]"></span>
                     <span>هسته دانش</span>
                 </div>
-                <div className="flex items-center gap-2 mb-2 text-surface-300">
+                <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
                     <span className="w-3 h-3 rounded-full bg-brand-400 shadow-[0_0_10px_#818cf8]"></span>
                     <span>دسته‌بندی‌ها</span>
                 </div>
-                <div className="flex items-center gap-2 mb-2 text-surface-300">
-                    <span className="w-2 h-2 rounded-full bg-surface-400"></span>
+                <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
+                    <span className="w-2 h-2 rounded-full bg-slate-400"></span>
                     <span>اسناد</span>
                 </div>
              </>
          ) : (
-             <div className="flex items-center gap-2 mb-2 text-surface-300">
-                <span className="w-3 h-3 rounded-full bg-brand-500 border border-white/20 shadow-sm"></span>
+             <div className="flex items-center gap-2 mb-2 text-slate-600 dark:text-surface-300">
+                <span className="w-3 h-3 rounded-full bg-brand-500 border border-black/10 dark:border-white/20 shadow-sm"></span>
                 <span>پایگاه دانش</span>
              </div>
          )}

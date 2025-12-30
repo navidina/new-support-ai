@@ -16,7 +16,11 @@ import {
     loadBenchmarkHistory,
     saveFineTuningRecord, 
     getFineTuningCount,   
-    exportFineTuningDataset 
+    exportFineTuningDataset,
+    loadTicketsFromDB,
+    saveTicketsToDB,
+    parseTicketFile,
+    clearTicketsDB
 } from '../services/mockBackend';
 
 const INITIAL_MESSAGE: Message = {
@@ -50,6 +54,7 @@ export const useRAGApplication = () => {
     const [isDbLoading, setIsDbLoading] = useState(true);
     const [processingStatus, setProcessingStatus] = useState<string>('');
     const [customChunks, setCustomChunks] = useState<KnowledgeChunk[]>([]);
+    const [ticketChunks, setTicketChunks] = useState<KnowledgeChunk[]>([]); // New state for isolated tickets
     const [docsList, setDocsList] = useState<DocumentStatus[]>([]);
     const [isOllamaOnline, setIsOllamaOnline] = useState<boolean>(false);
     const [lastBenchmarkScore, setLastBenchmarkScore] = useState<number | null>(null);
@@ -80,10 +85,18 @@ export const useRAGApplication = () => {
         if (isDbInitialized.current) return;
         const initSystem = async () => {
             try {
+                // Load General Knowledge
                 const savedChunks = await loadChunksFromDB();
                 if (savedChunks.length > 0) {
                     refreshStateFromChunks(savedChunks);
                 }
+                
+                // Load Isolated Tickets
+                const savedTickets = await loadTicketsFromDB();
+                if (savedTickets.length > 0) {
+                    setTicketChunks(savedTickets);
+                }
+
                 await loadHistory();
                 await loadBenchmarkStats();
                 await updateFineTuningCount(); 
@@ -393,6 +406,45 @@ export const useRAGApplication = () => {
         ));
     };
 
+    // --- Ticket Ingestion (Isolated) ---
+    const handleTicketFileSelected = async (fileList: FileList) => {
+        if (fileList.length === 0) return;
+        const file = fileList[0];
+        
+        setIsProcessing(true);
+        setProcessingType('file');
+        setProcessingStatus(`در حال پردازش تیکت‌های ${file.name}...`);
+
+        try {
+            const tickets = await parseTicketFile(file, (step, info) => {
+                setProcessingStatus(typeof info === 'string' ? info : `${step}...`);
+            });
+            
+            if (tickets.length > 0) {
+                await saveTicketsToDB(tickets);
+                setTicketChunks(prev => [...prev, ...tickets]);
+                alert(`${tickets.length} تیکت با موفقیت به پایگاه تحلیل اضافه شد.`);
+            } else {
+                alert('هیچ تیکتی در فایل یافت نشد.');
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert(`خطا در پردازش تیکت‌ها: ${e.message}`);
+        } finally {
+            setIsProcessing(false);
+            setProcessingType('idle');
+            setProcessingStatus('');
+        }
+    };
+
+    const handleClearTickets = async () => {
+        if (confirm("آیا از حذف تمام داده‌های تیکت مطمئن هستید؟")) {
+            await clearTicketsDB();
+            setTicketChunks([]);
+        }
+    };
+
+    // --- Main File Ingestion ---
     const handleFilesSelected = async (fileList: FileList) => {
         const isOnline = await checkOllamaConnection();
         if (!isOnline) {
@@ -506,6 +558,7 @@ export const useRAGApplication = () => {
         if (confirm('آیا مطمئن هستید؟ تمام مستندات ذخیره شده حذف خواهند شد.')) {
             await clearDatabase();
             setCustomChunks([]);
+            setTicketChunks([]);
             setDocsList([]);
             setConversations([]);
             setMessages([INITIAL_MESSAGE]);
@@ -594,6 +647,7 @@ export const useRAGApplication = () => {
             isDbLoading,
             processingStatus,
             customChunks,
+            ticketChunks, // Expose isolated tickets
             docsList,
             isOllamaOnline,
             useWebSearch,
@@ -605,6 +659,8 @@ export const useRAGApplication = () => {
             handleSendMessage,
             handleOptionSelect,
             handleFilesSelected,
+            handleTicketFileSelected, // New action
+            handleClearTickets, // New action
             handleCancelProcessing,
             handleClearDB,
             handleExportDB,

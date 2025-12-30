@@ -5,8 +5,8 @@ import { LocalDB } from './localDb';
 // --- NoSQL Database Configuration ---
 const DB_CONFIG = {
     dbName: 'RayanRAG_NoSQL',
-    version: 3, // Incremented version to create new store
-    stores: ['chunks', 'conversations', 'benchmark_runs', 'fine_tuning_dataset'] // Added new store
+    version: 4, // Incremented version to create new 'tickets' store
+    stores: ['chunks', 'conversations', 'benchmark_runs', 'fine_tuning_dataset', 'tickets'] // Added 'tickets' store
 };
 
 const db = new LocalDB(DB_CONFIG);
@@ -39,6 +39,34 @@ export const loadChunksFromDB = async (): Promise<KnowledgeChunk[]> => {
     const database = await getDB();
     return database.collection<KnowledgeChunk>('chunks').find({});
 };
+
+// --- TICKET KNOWLEDGE BASE OPERATIONS (ISOLATED) ---
+
+/**
+ * Saves ticket chunks to the isolated 'tickets' store.
+ */
+export const saveTicketsToDB = async (chunks: KnowledgeChunk[]): Promise<void> => {
+    const database = await getDB();
+    await database.collection<KnowledgeChunk>('tickets').insertMany(chunks);
+};
+
+/**
+ * Loads tickets from the isolated store.
+ */
+export const loadTicketsFromDB = async (): Promise<KnowledgeChunk[]> => {
+    const database = await getDB();
+    return database.collection<KnowledgeChunk>('tickets').find({});
+};
+
+/**
+ * Clears the isolated tickets store.
+ */
+export const clearTicketsDB = async (): Promise<void> => {
+    const database = await getDB();
+    await database.collection('tickets').clear();
+};
+
+// --------------------------------------------------
 
 /**
  * Saves or updates a conversation session.
@@ -153,6 +181,7 @@ export const clearDatabase = async (): Promise<void> => {
     await database.collection('conversations').clear();
     await database.collection('benchmark_runs').clear();
     await database.collection('fine_tuning_dataset').clear();
+    await database.collection('tickets').clear();
 };
 
 /**

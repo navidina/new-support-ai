@@ -1,5 +1,4 @@
 
-
 import { KnowledgeChunk, GraphNode, GraphLink } from '../types';
 
 /**
@@ -158,167 +157,311 @@ export const prepareGraphData = (chunks: KnowledgeChunk[], visibleCategories: Se
 };
 
 // ==========================================
-// TICKET-FOCUSED SCHEMA GRAPH LOGIC
+// MANAGERIAL SCHEMA GRAPH LOGIC (Aggregated)
 // ==========================================
 
 const TICKET_CONFIG = {
     // Level 1: Systems (Root Anchors)
     systems: {
-        'exir': { label: 'سامانه اکسیر', color: '#1e40af', x: 0, y: -200 },
-        'recsar': { label: 'سامانه رکسار', color: '#1e3a8a', x: 200, y: -100 },
-        'backoffice': { label: 'بک‌آفیس', color: '#1e40af', x: -200, y: -100 },
-        'etf': { label: 'صندوق/ETF', color: '#1d4ed8', x: 0, y: 100 },
-        'mobile': { label: 'رایان همراه', color: '#2563eb', x: 200, y: 100 },
-        'unknown': { label: 'سایر سیستم‌ها', color: '#64748b', x: -200, y: 100 }
+        'exir': { label: 'سامانه اکسیر', color: '#3b82f6', x: 0, y: -250, keywords: ['اکسیر', 'exir', 'تکنیکال', 'بمب', 'شرطی', 'نمودار'] },
+        'recsar': { label: 'سامانه رکسار', color: '#6366f1', x: 250, y: -100, keywords: ['رکسار', 'recsar', 'برخط گروهی', 'تعهدی', 'سبد'] },
+        'backoffice': { label: 'بک‌آفیس', color: '#8b5cf6', x: -250, y: -100, keywords: ['بک آفیس', 'بک‌آفیس', 'backoffice', 'pam', 'پم', 'سند', 'حسابداری', 'مالی'] },
+        'etf': { label: 'صندوق/ETF', color: '#10b981', x: 0, y: 150, keywords: ['صندوق', 'etf', 'nav', 'صدور', 'ابطال', 'یونیت'] },
+        'mobile': { label: 'رایان همراه', color: '#06b6d4', x: 250, y: 150, keywords: ['رایان همراه', 'mobile', 'android', 'ios', 'اپلیکیشن'] },
+        'club': { label: 'باشگاه مشتریان', color: '#f43f5e', x: -250, y: 150, keywords: ['باشگاه', 'club', 'امتیاز', 'معرف', 'تخفیف', 'گیفت'] },
+        'sejam': { label: 'سجام و احراز', color: '#eab308', x: 0, y: 300, keywords: ['سجام', 'sejam', 'احراز هویت', 'otp', 'شناسه', 'کد ملی'] },
+        'unknown': { label: 'سایر سیستم‌ها', color: '#64748b', x: 0, y: 0, keywords: [] }
     },
-    // Level 2: Modules/Components (Orange)
-    components: [
-        { key: 'login', patterns: ['لاگین', 'رمز عبور', 'ورود', 'دسترسی'], label: 'دسترسی و ورود' },
-        { key: 'order', patterns: ['سفارش', 'خرید', 'فروش', 'معامله'], label: 'سفارشات' },
-        { key: 'finance', patterns: ['حساب', 'مانده', 'واریز', 'فیش', 'پول', 'اعتبار'], label: 'مالی و حساب' },
-        { key: 'data', patterns: ['گزارش', 'داده', 'نمودار', 'اطلاعات', 'خروجی'], label: 'گزارشات و داده' },
-        { key: 'setting', patterns: ['تنظیمات', 'پیکربندی', 'منو', 'آپدیت'], label: 'تنظیمات' }
-    ],
-    // Level 3: Issues/Symptoms (Red)
+    // Issue Classification
     issues: [
-        { key: 'error', patterns: ['خطای', 'ارور', 'error', 'failed'], label: 'خطای سیستمی' },
-        { key: 'discrepancy', patterns: ['مغایرت', 'اختلاف', 'تفاوت'], label: 'مغایرت' },
-        { key: 'block', patterns: ['مسدود', 'بسته', 'غیرفعال'], label: 'مسدودی' },
-        { key: 'connection', patterns: ['قطع', 'تایم اوت', 'timeout', 'کند'], label: 'اتصال/شبکه' },
-        { key: 'bug', patterns: ['باگ', 'ایراد', 'مشکل', 'نمایش نمی‌دهد'], label: 'باگ نرم‌افزاری' }
-    ],
-    // Level 4: Actions/Solutions (Green)
-    actions: [
-        { key: 'reset', patterns: ['ریست', 'بازنشانی', 'reset'], label: 'ریست/بازنشانی' },
-        { key: 'update', patterns: ['بروزرسانی', 'update', 'نسخه جدید'], label: 'بروزرسانی' },
-        { key: 'config', patterns: ['تنظیم', 'اصلاح', 'تغییر وضعیت'], label: 'تغییر تنظیمات' },
-        { key: 'check', patterns: ['بررسی', 'پیگیری', 'تیکت'], label: 'بررسی پشتیبانی' }
+        { key: 'login', patterns: ['لاگین', 'رمز عبور', 'ورود', 'password', 'login', 'فراموشی رمز'], label: 'ورود و رمز عبور' },
+        { key: 'access', patterns: ['دسترسی', 'مجوز', 'مسدود', 'غیرفعال', 'سطح دسترسی', 'عدم مشاهده', 'access'], label: 'سطح دسترسی' },
+        { key: 'order', patterns: ['سفارش', 'خرید', 'فروش', 'معامله', 'هسته', 'ارسال نشد', 'تأخیر', 'order', 'trade'], label: 'سفارش و معاملات' },
+        { key: 'finance', patterns: ['مغایرت', 'مانده', 'حساب', 'واریز', 'فیش', 'پول', 'اعتبار', 'اختلاف', 'ریال', 'بانک', 'سود', 'زیان'], label: 'مغایرت مالی و حساب' },
+        { key: 'data', patterns: ['گزارش', 'داده', 'نمودار', 'اطلاعات', 'خروجی', 'عدم نمایش', 'لیست', 'اکسل', 'چاپ'], label: 'گزارشات و داده‌ها' },
+        { key: 'infra', patterns: ['اتصال', 'قطع', 'تایم اوت', 'timeout', 'کندی', 'سرور', 'شبکه', 'اینترنت', 'api', 'وب سرویس'], label: 'زیرساخت و شبکه' },
+        { key: 'settings', patterns: ['تنظیمات', 'پیکربندی', 'نسخه', 'آپدیت', 'کانفیگ', 'شعبه', 'کارمزد'], label: 'تنظیمات سیستم' },
+        { key: 'bug', patterns: ['خطای سیستمی', 'ارور', 'error', 'باگ', 'exception', 'پیغام', 'crash'], label: 'باگ نرم‌افزاری' }
     ]
 };
 
 const extractTicketEntities = (text: string) => {
     const lower = text.toLowerCase();
     
-    // 1. Detect System
-    let sysKey = 'unknown';
-    if (lower.includes('اکسیر') || lower.includes('exir')) sysKey = 'exir';
-    else if (lower.includes('رکسار') || lower.includes('recsar')) sysKey = 'recsar';
-    else if (lower.includes('بک آفیس') || lower.includes('بک‌آفیس')) sysKey = 'backoffice';
-    else if (lower.includes('صندوق') || lower.includes('etf')) sysKey = 'etf';
-    else if (lower.includes('رایان همراه') || lower.includes('mobile')) sysKey = 'mobile';
-
-    // 2. Detect Component (Module)
-    let compMatch = TICKET_CONFIG.components.find(c => c.patterns.some(p => lower.includes(p)));
-    
-    // 3. Detect Issue
-    let issueMatch = TICKET_CONFIG.issues.find(i => i.patterns.some(p => lower.includes(p)));
-    
-    // Specific Error Code Extraction
-    const errCodeMatch = lower.match(/(خطای|error)\s*[:#-]?\s*(\d{3,})/);
-    let specificIssueLabel = issueMatch ? issueMatch.label : null;
-    if (errCodeMatch) {
-        specificIssueLabel = `خطای ${errCodeMatch[2]}`;
+    // Separate Title from Body if marked (requires parseTicketFile update)
+    let titleText = "";
+    let bodyText = lower;
+    const titleMatch = lower.match(/عنوان:(.*?)\n/);
+    if (titleMatch) {
+        titleText = titleMatch[1];
+        bodyText = lower.replace(titleMatch[0], ''); // Remove title from body to avoid double counting if needed, but keeping it is fine.
     }
 
-    // 4. Detect Action
-    let actionMatch = TICKET_CONFIG.actions.find(a => a.patterns.some(p => lower.includes(p)));
+    const checkMatch = (patterns: string[]) => {
+        let score = 0;
+        patterns.forEach(p => {
+            const pLower = p.toLowerCase();
+            // Title matches count double
+            if (titleText.includes(pLower)) score += 2;
+            // Body matches count once per occurrence
+            const matches = bodyText.split(pLower).length - 1;
+            score += matches;
+        });
+        return score;
+    };
 
-    return { sysKey, compMatch, issueLabel: specificIssueLabel, actionMatch };
+    // 1. Detect System (Scoring Strategy)
+    let bestSys = 'unknown';
+    let maxSysScore = 0;
+
+    Object.entries(TICKET_CONFIG.systems).forEach(([key, conf]) => {
+        if (key === 'unknown') return;
+        const score = checkMatch(conf.keywords);
+        if (score > maxSysScore) {
+            maxSysScore = score;
+            bestSys = key;
+        }
+    });
+
+    // Fallback logic if score is low but explicit mentions exist
+    if (maxSysScore === 0) {
+        if (lower.includes('آنلاین')) bestSys = 'exir'; // Default to Exir for "Online"
+    }
+
+    // 2. Detect Issue Category (Scoring Strategy)
+    let bestIssue = 'سایر موارد';
+    let maxIssueScore = 0;
+
+    TICKET_CONFIG.issues.forEach(issue => {
+        const score = checkMatch(issue.patterns);
+        if (score > maxIssueScore) {
+            maxIssueScore = score;
+            bestIssue = issue.label;
+        }
+    });
+
+    // Specific Error Code override for more detail
+    const errCodeMatch = lower.match(/(خطای|error)\s*[:#-]?\s*(\d{3,})/);
+    if (errCodeMatch) {
+        bestIssue = `Error ${errCodeMatch[2]}`;
+    }
+
+    return { sysKey: bestSys, issueLabel: bestIssue };
 };
 
 export const prepareSchemaGraphData = (chunks: KnowledgeChunk[]) => {
-    const nodesMap = new Map<string, GraphNode>();
+    const nodes: GraphNode[] = [];
     const links: GraphLink[] = [];
-    const MAX_NODES = 200; 
+    
+    // Aggregation Maps
+    const systemCounts: Record<string, number> = {};
+    const issueCounts: Record<string, Record<string, number>> = {}; // SysKey -> IssueLabel -> Count
 
-    // 1. Create Base System Nodes
+    // Initialize Systems
+    Object.keys(TICKET_CONFIG.systems).forEach(k => {
+        systemCounts[k] = 0;
+        issueCounts[k] = {};
+    });
+
+    // 1. Aggregate Data
+    chunks.forEach(chunk => {
+        // Only process troubleshooting or relevant chunks
+        if (chunk.metadata?.category !== 'troubleshooting' && !chunk.content.includes('خطا') && !chunk.content.includes('مشکل') && !chunk.source.id.endsWith('.csv')) return;
+
+        const { sysKey, issueLabel } = extractTicketEntities(chunk.content);
+        
+        systemCounts[sysKey]++;
+        if (!issueCounts[sysKey][issueLabel]) {
+            issueCounts[sysKey][issueLabel] = 0;
+        }
+        issueCounts[sysKey][issueLabel]++;
+    });
+
+    // 2. Create System Anchors (Central Nodes)
     Object.entries(TICKET_CONFIG.systems).forEach(([key, conf]) => {
-        nodesMap.set(`sys-${key}`, {
-            id: `sys-${key}`,
-            group: 'System',
-            label: conf.label,
-            fullLabel: conf.label,
-            x: conf.x, y: conf.y, vx: 0, vy: 0, radius: 45, baseRadius: 45, color: conf.color, chunkCount: 0,
-            targetX: conf.x, targetY: conf.y
+        const totalSysIssues = systemCounts[key];
+        // Only show system if it has issues or is a main one
+        if (totalSysIssues > 0 || ['exir', 'recsar', 'backoffice'].includes(key)) {
+            const size = Math.max(40, 30 + Math.sqrt(totalSysIssues) * 3);
+            nodes.push({
+                id: `sys-${key}`,
+                group: 'System',
+                label: conf.label,
+                fullLabel: conf.label, // Display label
+                x: conf.x, 
+                y: conf.y, 
+                vx: 0, vy: 0, 
+                radius: size, 
+                baseRadius: size, 
+                color: conf.color, 
+                chunkCount: totalSysIssues,
+                targetX: conf.x, 
+                targetY: conf.y,
+                metadata: { type: 'system_anchor', totalIssues: totalSysIssues }
+            });
+        }
+    });
+
+    // 3. Create Aggregated Issue Nodes (Orbiting Planets)
+    Object.entries(issueCounts).forEach(([sysKey, issues]) => {
+        const sysNode = nodes.find(n => n.id === `sys-${sysKey}`);
+        if (!sysNode) return;
+
+        Object.entries(issues).forEach(([issueLabel, count]) => {
+            if (count === 0) return;
+
+            const nodeId = `issue-${sysKey}-${issueLabel}`;
+            // Size based on count (Logarithmic scale for better visual balance)
+            const radius = Math.max(15, 10 + Math.sqrt(count) * 5); 
+            
+            // Color Intensity based on severity/count relative to system total
+            const severity = count / (sysNode.chunkCount || 1);
+            let color = '#fca5a5'; // Light red
+            if (severity > 0.3) color = '#ef4444'; // Red
+            if (severity > 0.5) color = '#b91c1c'; // Dark Red
+            if (issueLabel.includes('مالی') || issueLabel.includes('مغایرت')) color = '#f59e0b'; // Amber for finance
+
+            // Initial position: Random circle around system
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 150 + Math.random() * 50; 
+
+            nodes.push({
+                id: nodeId,
+                group: 'Issue',
+                label: issueLabel,
+                fullLabel: `${issueLabel} (${count})`,
+                x: sysNode.x + Math.cos(angle) * dist,
+                y: sysNode.y + Math.sin(angle) * dist,
+                vx: 0, vy: 0,
+                radius: radius,
+                baseRadius: radius,
+                color: color,
+                chunkCount: count,
+                metadata: { type: 'aggregated_issue', parentSystem: sysNode.label, percentage: (severity * 100).toFixed(1) }
+            });
+
+            // Weighted Link
+            links.push({ 
+                source: sysNode.id, 
+                target: nodeId, 
+                type: 'CAUSED_BY' 
+            });
         });
     });
 
-    // 2. Filter & Process Chunks
-    const ticketChunks = chunks.filter(c => 
-        c.metadata?.category === 'troubleshooting' || 
-        c.metadata?.ticketId || 
-        c.content.includes('خطا') || 
-        c.content.includes('مغایرت')
-    );
-
-    ticketChunks.forEach(chunk => {
-        if (nodesMap.size > MAX_NODES) return;
-
-        const { sysKey, compMatch, issueLabel, actionMatch } = extractTicketEntities(chunk.content);
-        const sysId = `sys-${sysKey}`;
-        
-        let compId = '';
-        if (compMatch) {
-            compId = `comp-${sysKey}-${compMatch.key}`;
-            if (!nodesMap.has(compId)) {
-                nodesMap.set(compId, {
-                    id: compId, group: 'Module', label: compMatch.label, fullLabel: compMatch.label,
-                    x: nodesMap.get(sysId)!.x + (Math.random()-0.5)*100,
-                    y: nodesMap.get(sysId)!.y + (Math.random()-0.5)*100,
-                    vx: 0, vy: 0, radius: 25, baseRadius: 25, color: '#f59e0b', chunkCount: 1
-                });
-                links.push({ source: sysId, target: compId });
-            } else {
-                nodesMap.get(compId)!.chunkCount!++;
-            }
-        }
-
-        let issueId = '';
-        if (issueLabel) {
-            const cleanLabel = issueLabel.replace(/\s+/g, '-');
-            issueId = `issue-${sysKey}-${cleanLabel}`;
-            
-            if (!nodesMap.has(issueId)) {
-                nodesMap.set(issueId, {
-                    id: issueId, group: 'Issue', label: issueLabel, fullLabel: issueLabel,
-                    x: (Math.random()-0.5)*400, y: (Math.random()-0.5)*400,
-                    vx: 0, vy: 0, radius: 20, baseRadius: 20, color: '#ef4444', chunkCount: 1
-                });
-            } else {
-                nodesMap.get(issueId)!.chunkCount!++;
-            }
-
-            const parentId = compId || sysId;
-            if (!links.some(l => l.source === parentId && l.target === issueId)) {
-                links.push({ source: parentId, target: issueId, type: 'CAUSED_BY' });
-            }
-        }
-
-        if (actionMatch && issueId) {
-            const actionId = `act-${actionMatch.key}`;
-            if (!nodesMap.has(actionId)) {
-                nodesMap.set(actionId, {
-                    id: actionId, group: 'Action', label: actionMatch.label, fullLabel: actionMatch.label,
-                    x: (Math.random()-0.5)*500, y: (Math.random()-0.5)*500,
-                    vx: 0, vy: 0, radius: 15, baseRadius: 15, color: '#10b981', chunkCount: 1
-                });
-            }
-            if (!links.some(l => l.source === actionId && l.target === issueId)) {
-                links.push({ source: actionId, target: issueId, type: 'SOLVES' });
-            }
-        }
-    });
-
-    const usedSystemIds = new Set(links.map(l => l.source));
-    const finalNodes = Array.from(nodesMap.values()).filter(n => 
-        n.group !== 'System' || usedSystemIds.has(n.id) || n.chunkCount! > 0
-    );
-
     return { 
-        nodes: finalNodes, 
+        nodes, 
         links, 
         treeLinks: [], networkLinks: [], topicLinks: [] 
     };
+};
+
+/**
+ * Prepare specialized Ticket Frequency Graph.
+ * Groups by System (Cluster) -> Error Type (Sub-Cluster).
+ * Uses a Packed Bubble Layout logic (via Force Simulation).
+ */
+export const prepareTicketGraphData = (chunks: KnowledgeChunk[]) => {
+    const nodes: GraphNode[] = [];
+    const links: GraphLink[] = [];
+
+    // 1. Filter only Ticket Data
+    const ticketChunks = chunks.filter(c => 
+        (c.metadata?.ticketId) || 
+        (c.metadata?.category === 'troubleshooting') ||
+        (c.source.id.endsWith('.csv'))
+    );
+
+    if (ticketChunks.length === 0) return { nodes: [], links: [], treeLinks: [], networkLinks: [], topicLinks: [] };
+
+    // 2. Aggregate Data: System -> Issue -> Count
+    const systemAggregation: Record<string, Record<string, number>> = {};
+    const systemTotals: Record<string, number> = {};
+
+    ticketChunks.forEach(chunk => {
+        const { sysKey, issueLabel } = extractTicketEntities(chunk.content);
+        
+        if (!systemAggregation[sysKey]) systemAggregation[sysKey] = {};
+        if (!systemTotals[sysKey]) systemTotals[sysKey] = 0;
+
+        if (!systemAggregation[sysKey][issueLabel]) systemAggregation[sysKey][issueLabel] = 0;
+        
+        systemAggregation[sysKey][issueLabel]++;
+        systemTotals[sysKey]++;
+    });
+
+    // 3. Create Graph
+    // Center Node: Company
+    const centerNode: GraphNode = {
+        id: 'RAYAN',
+        group: 'core',
+        label: 'رایان هم‌افزا',
+        fullLabel: 'کل تیکت‌ها',
+        x: 0, y: 0, vx: 0, vy: 0,
+        radius: 50, baseRadius: 50,
+        color: '#ffffff',
+        chunkCount: ticketChunks.length
+    };
+    nodes.push(centerNode);
+
+    // Systems
+    const activeSystems = Object.keys(systemTotals).filter(k => systemTotals[k] > 0);
+    
+    activeSystems.forEach((sysKey, sysIdx) => {
+        const totalSys = systemTotals[sysKey] || 0;
+        const conf = TICKET_CONFIG.systems[sysKey as keyof typeof TICKET_CONFIG.systems];
+
+        // Position systems in a ring
+        const angle = (sysIdx / activeSystems.length) * Math.PI * 2;
+        const radius = 350;
+        const sysX = Math.cos(angle) * radius;
+        const sysY = Math.sin(angle) * radius;
+
+        const sysNode: GraphNode = {
+            id: `sys-${sysKey}`,
+            group: 'System',
+            label: conf.label,
+            fullLabel: `${conf.label} (${totalSys})`,
+            x: sysX, y: sysY, vx: 0, vy: 0,
+            radius: 30 + Math.sqrt(totalSys) * 2,
+            baseRadius: 30,
+            color: conf.color,
+            chunkCount: totalSys,
+            targetX: sysX, targetY: sysY
+        };
+        nodes.push(sysNode);
+        links.push({ source: 'RAYAN', target: sysNode.id, type: 'hierarchy' });
+
+        // Issues (Bubbles around System)
+        const issues = systemAggregation[sysKey];
+        const issueKeys = Object.keys(issues);
+        
+        issueKeys.forEach((issueLabel, i) => {
+            const count = issues[issueLabel];
+            // Spiral placement around system node
+            const issueAngle = (i / issueKeys.length) * Math.PI * 2 + Math.random();
+            const issueDist = 90 + Math.random() * 60;
+            
+            nodes.push({
+                id: `issue-${sysKey}-${i}`,
+                group: 'Issue',
+                label: issueLabel,
+                fullLabel: `${issueLabel}: ${count} مورد`,
+                x: sysX + Math.cos(issueAngle) * issueDist,
+                y: sysY + Math.sin(issueAngle) * issueDist,
+                vx: 0, vy: 0,
+                radius: 10 + Math.sqrt(count) * 4, // Area proportional to count
+                baseRadius: 10,
+                color: count > 20 ? '#ef4444' : (count > 5 ? '#f59e0b' : '#3b82f6'), // Red for high freq
+                chunkCount: count,
+                metadata: { type: 'aggregated_issue', parentSystem: conf.label, percentage: ((count/totalSys)*100).toFixed(1) }
+            });
+
+            links.push({ source: sysNode.id, target: `issue-${sysKey}-${i}`, type: 'issue' });
+        });
+    });
+
+    return { nodes, links, treeLinks: [], networkLinks: [], topicLinks: [] };
 };
 
 // ==========================================

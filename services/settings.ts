@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 ۳. در پاسخ دادن به سوالات فنی (مثل خطاها یا تنظیمات)، نام دقیق پارامترها و مسیرهای منو را عیناً از متن کپی کن.
 ۴. پاسخ باید خلاصه، فنی، روان و بدون حاشیه باشد.`,
   minConfidence: 0.15,
-  vectorWeight: 0.8 // Default: 80% Vector, 20% Keyword
+  vectorWeight: 0.8, // Default: 80% Vector, 20% Keyword
+  theme: 'dark' // Default theme
 };
 
 // Internal settings state
@@ -37,6 +38,7 @@ const loadSettings = () => {
       if (currentSettings.chunkOverlap === 200) currentSettings.chunkOverlap = 300;
       if (currentSettings.vectorWeight === undefined) currentSettings.vectorWeight = 0.8;
       if (currentSettings.rerankerModel === undefined) currentSettings.rerankerModel = 'Xenova/bge-reranker-v2-m3';
+      if (currentSettings.theme === undefined) currentSettings.theme = 'dark';
     }
   } catch (e) {
     console.error("Failed to load settings", e);
