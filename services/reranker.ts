@@ -1,5 +1,6 @@
 
 // services/reranker.ts
+import { getSettings } from './settings';
 
 // We use dynamic import with a direct URL to bypass Vite's dependency resolution
 // because we are using an import map / CDN and the package is not in node_modules.
@@ -8,31 +9,45 @@ const TRANSFORMERS_URL = 'https://esm.sh/@xenova/transformers@2.17.2';
 let tokenizer = null;
 let model = null;
 let transformers = null;
+let loadedModelId = '';
 
 export const loadRerankerModel = async () => {
-    if (!model) {
-        console.log('Loading Reranker model...');
-        try {
-            // Load module dynamically
-            if (!transformers) {
-                // @ts-ignore
-                transformers = await import(/* @vite-ignore */ TRANSFORMERS_URL);
-                transformers.env.allowLocalModels = false;
-                transformers.env.useBrowserCache = true;
-            }
+    const settings = getSettings();
+    const currentModelId = settings.rerankerModel || 'Xenova/bge-reranker-v2-m3';
 
-            const { AutoTokenizer, AutoModelForSequenceClassification } = transformers;
-            const MODEL_ID = 'Xenova/bge-reranker-v2-m3';
+    // If model is already loaded and ID matches, return
+    if (model && loadedModelId === currentModelId) {
+        return;
+    }
 
-            tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
-            model = await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
-                quantized: true 
-            });
-            console.log('Reranker model loaded.');
-        } catch (error) {
-            console.error("Failed to load reranker model:", error);
-            throw error;
+    // If ID changed or model not loaded, load/reload
+    console.log(`Loading Reranker model: ${currentModelId}...`);
+    try {
+        // Load module dynamically if not already loaded
+        if (!transformers) {
+            // @ts-ignore
+            transformers = await import(/* @vite-ignore */ TRANSFORMERS_URL);
+            transformers.env.allowLocalModels = false;
+            transformers.env.useBrowserCache = true;
         }
+
+        const { AutoTokenizer, AutoModelForSequenceClassification } = transformers;
+
+        // Dispose old model if exists (if method available, otherwise JS GC handles it eventually)
+        // transformers.js models don't strictly require manual disposal in this context, just overwrite reference.
+        tokenizer = null;
+        model = null;
+
+        tokenizer = await AutoTokenizer.from_pretrained(currentModelId);
+        model = await AutoModelForSequenceClassification.from_pretrained(currentModelId, {
+            quantized: true 
+        });
+        
+        loadedModelId = currentModelId;
+        console.log('Reranker model loaded.');
+    } catch (error) {
+        console.error("Failed to load reranker model:", error);
+        throw error;
     }
 };
 

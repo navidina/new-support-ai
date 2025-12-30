@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   ollamaBaseUrl: 'http://localhost:11434',
   chatModel: 'aya:8b',
   embeddingModel: 'jeffh/intfloat-multilingual-e5-large-instruct:f32', 
+  rerankerModel: 'Xenova/bge-reranker-v2-m3', // Default BGE M3 Reranker
   chunkSize: 1500,      // Increased to 1500 to capture more context
   childChunkSize: 500,  // Increased for child chunks
   chunkOverlap: 300,    // Increased overlap to 300 chars to ensure sentence continuity
@@ -32,10 +33,10 @@ const loadSettings = () => {
       const parsed = JSON.parse(saved);
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
       // Force update critical chunking defaults if they match old defaults
-      // This ensures existing users get the benefit without clearing storage
       if (currentSettings.chunkSize === 1200) currentSettings.chunkSize = 1500;
       if (currentSettings.chunkOverlap === 200) currentSettings.chunkOverlap = 300;
       if (currentSettings.vectorWeight === undefined) currentSettings.vectorWeight = 0.8;
+      if (currentSettings.rerankerModel === undefined) currentSettings.rerankerModel = 'Xenova/bge-reranker-v2-m3';
     }
   } catch (e) {
     console.error("Failed to load settings", e);

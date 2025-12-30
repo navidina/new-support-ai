@@ -55,7 +55,7 @@ export const ProcessingOverlay: React.FC<ProcessingOverlayProps> = ({
         : 0;
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/90 backdrop-blur-xl transition-all duration-300 font-sans" dir="rtl">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/90 backdrop-blur-xl transition-all duration-300 font-sans" dir="rtl">
             
             {/* CSS Animations for the Funnel */}
             <style>{`

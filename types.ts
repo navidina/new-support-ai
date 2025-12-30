@@ -3,6 +3,7 @@ export interface AppSettings {
   ollamaBaseUrl: string;
   chatModel: string;
   embeddingModel: string;
+  rerankerModel: string; // New field for Reranker configuration
   chunkSize: number;
   childChunkSize: number;
   chunkOverlap: number;

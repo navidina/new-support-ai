@@ -247,45 +247,45 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
 
   // Helper to render stats for current run OR selected history run
   const renderStats = (data: { avgScore: number, avgFaithfulness?: number, avgRelevance?: number, passRate: number, avgTime: number }) => (
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center">
-            <div className={`p-2 rounded-full mb-1 ${data.avgScore > 0.8 ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-600'}`}>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6 text-white">
+        <div className="bg-surface-800/50 p-3 rounded-xl border border-white/5 shadow-sm flex flex-col justify-center items-center backdrop-blur-sm">
+            <div className={`p-2 rounded-full mb-1 ${data.avgScore > 0.8 ? 'bg-brand-500/20 text-brand-400' : 'bg-surface-700/50 text-surface-400'}`}>
                 <Award className="w-5 h-5" />
             </div>
-            <span className="text-xl font-bold text-slate-800">{toPersianDigits((data.avgScore * 100).toFixed(0))}٪</span>
-            <span className="text-[10px] text-slate-500">امتیاز کل (Composite)</span>
+            <span className="text-xl font-bold">{toPersianDigits((data.avgScore * 100).toFixed(0))}٪</span>
+            <span className="text-[10px] text-surface-400">امتیاز کل (Composite)</span>
         </div>
         
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center">
-            <div className="p-2 rounded-full mb-1 bg-emerald-100 text-emerald-600">
+        <div className="bg-surface-800/50 p-3 rounded-xl border border-white/5 shadow-sm flex flex-col justify-center items-center backdrop-blur-sm">
+            <div className="p-2 rounded-full mb-1 bg-emerald-500/20 text-emerald-400">
                 <ShieldCheck className="w-5 h-5" />
             </div>
-            <span className="text-xl font-bold text-slate-800">{toPersianDigits(((data.avgFaithfulness || 0) * 100).toFixed(0))}٪</span>
-            <span className="text-[10px] text-slate-500">وفاداری (Faithfulness)</span>
+            <span className="text-xl font-bold">{toPersianDigits(((data.avgFaithfulness || 0) * 100).toFixed(0))}٪</span>
+            <span className="text-[10px] text-surface-400">وفاداری (Faithfulness)</span>
         </div>
 
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center">
-            <div className="p-2 rounded-full mb-1 bg-blue-100 text-blue-600">
+        <div className="bg-surface-800/50 p-3 rounded-xl border border-white/5 shadow-sm flex flex-col justify-center items-center backdrop-blur-sm">
+            <div className="p-2 rounded-full mb-1 bg-blue-500/20 text-blue-400">
                 <Target className="w-5 h-5" />
             </div>
-            <span className="text-xl font-bold text-slate-800">{toPersianDigits(((data.avgRelevance || 0) * 100).toFixed(0))}٪</span>
-            <span className="text-[10px] text-slate-500">ارتباط (Relevance)</span>
+            <span className="text-xl font-bold">{toPersianDigits(((data.avgRelevance || 0) * 100).toFixed(0))}٪</span>
+            <span className="text-[10px] text-surface-400">ارتباط (Relevance)</span>
         </div>
 
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center">
-            <div className="p-2 rounded-full mb-1 bg-amber-100 text-amber-600">
+        <div className="bg-surface-800/50 p-3 rounded-xl border border-white/5 shadow-sm flex flex-col justify-center items-center backdrop-blur-sm">
+            <div className="p-2 rounded-full mb-1 bg-amber-500/20 text-amber-400">
                 <CheckCircle2 className="w-5 h-5" />
             </div>
-            <span className="text-xl font-bold text-slate-800">{toPersianDigits(data.passRate.toFixed(0))}٪</span>
-            <span className="text-[10px] text-slate-500">نرخ قبولی</span>
+            <span className="text-xl font-bold">{toPersianDigits(data.passRate.toFixed(0))}٪</span>
+            <span className="text-[10px] text-surface-400">نرخ قبولی</span>
         </div>
 
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center">
-            <div className="p-2 rounded-full mb-1 bg-slate-100 text-slate-600">
+        <div className="bg-surface-800/50 p-3 rounded-xl border border-white/5 shadow-sm flex flex-col justify-center items-center backdrop-blur-sm">
+            <div className="p-2 rounded-full mb-1 bg-surface-700/50 text-surface-400">
                 <Clock className="w-5 h-5" />
             </div>
-            <span className="text-xl font-bold text-slate-800">{toPersianDigits((data.avgTime / 1000).toFixed(1))}s</span>
-            <span className="text-[10px] text-slate-500">زمان پاسخ</span>
+            <span className="text-xl font-bold">{toPersianDigits((data.avgTime / 1000).toFixed(1))}s</span>
+            <span className="text-[10px] text-surface-400">زمان پاسخ</span>
         </div>
       </div>
   );
@@ -294,69 +294,69 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
       <div className="space-y-3">
         {list.map((res) => {
             const safeScore = isNaN(res.similarityScore) ? 0 : res.similarityScore;
-            const scoreColor = safeScore > 0.85 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' 
-                : safeScore > 0.60 ? 'text-amber-600 bg-amber-50 border-amber-200' 
-                : 'text-red-600 bg-red-50 border-red-200';
+            const scoreColor = safeScore > 0.85 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' 
+                : safeScore > 0.60 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' 
+                : 'text-red-400 bg-red-500/10 border-red-500/30';
             const isExpanded = expandedRow === res.caseId;
             const currentFeedback = feedbackMap[`${res.caseId}`];
 
             return (
-                <div key={res.caseId} className="bg-white border border-slate-200 rounded-xl overflow-hidden transition-all">
+                <div key={res.caseId} className="bg-surface-800/30 border border-white/5 rounded-xl overflow-hidden transition-all backdrop-blur-sm hover:bg-surface-800/50">
                     <button 
                         onClick={() => setExpandedRow(isExpanded ? null : (res.caseId as number))}
-                        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                        className="w-full flex items-center justify-between p-4 transition-colors"
                     >
                         <div className="flex items-center gap-4 text-right overflow-hidden">
                             <span className={`text-xs font-bold px-2 py-1 rounded border min-w-[3rem] text-center ${scoreColor}`}>
                                 {toPersianDigits((safeScore * 100).toFixed(0))}٪
                             </span>
-                            <span className="text-sm font-medium text-slate-700 truncate">{res.question.split('\n').pop() || res.question}</span>
+                            <span className="text-sm font-medium text-surface-200 truncate">{res.question.split('\n').pop() || res.question}</span>
                         </div>
                         <div className="flex items-center gap-4">
                             {/* Mini RAGAS Indicators */}
                             <div className="hidden md:flex gap-2">
-                                <div className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                <div className="flex items-center gap-1 text-[10px] text-surface-400 bg-surface-900/50 px-2 py-0.5 rounded border border-white/5">
                                     <ShieldCheck className="w-3 h-3 text-emerald-500" />
                                     <span>{toPersianDigits(((res.faithfulnessScore || 0) * 100).toFixed(0))}٪</span>
                                 </div>
-                                <div className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                <div className="flex items-center gap-1 text-[10px] text-surface-400 bg-surface-900/50 px-2 py-0.5 rounded border border-white/5">
                                     <Target className="w-3 h-3 text-blue-500" />
                                     <span>{toPersianDigits(((res.relevanceScore || 0) * 100).toFixed(0))}٪</span>
                                 </div>
                             </div>
-                            {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                            {isExpanded ? <ChevronUp className="w-4 h-4 text-surface-500" /> : <ChevronDown className="w-4 h-4 text-surface-500" />}
                         </div>
                     </button>
                     
                     {isExpanded && (
-                        <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-4 text-sm animate-in slide-in-from-top-2">
+                        <div className="p-4 bg-surface-950/50 border-t border-white/5 space-y-4 text-sm animate-in slide-in-from-top-2">
                             {/* Full Question if it was truncated */}
-                            <div className="bg-slate-100 p-2 rounded text-xs text-slate-700 whitespace-pre-wrap">
-                                <strong>سوال کامل:</strong> {res.question}
+                            <div className="bg-surface-800/50 p-2 rounded text-xs text-surface-300 whitespace-pre-wrap border border-white/5">
+                                <strong className="text-white">سوال کامل:</strong> {res.question}
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                                    <h4 className="text-xs font-bold text-emerald-600 mb-2 flex items-center gap-1">
+                                <div className="bg-surface-800/30 p-3 rounded-lg border border-white/5 shadow-sm">
+                                    <h4 className="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1">
                                         <CheckCircle2 className="w-3 h-3" /> پاسخ مرجع (Ground Truth)
                                     </h4>
-                                    <p className="text-slate-600 leading-6 text-xs text-justify whitespace-pre-wrap">{res.groundTruth}</p>
+                                    <p className="text-surface-300 leading-6 text-xs text-justify whitespace-pre-wrap">{res.groundTruth}</p>
                                 </div>
-                                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex flex-col">
+                                <div className="bg-surface-800/30 p-3 rounded-lg border border-white/5 shadow-sm flex flex-col">
                                     <div>
-                                        <h4 className="text-xs font-bold text-blue-600 mb-2 flex items-center gap-1">
+                                        <h4 className="text-xs font-bold text-blue-400 mb-2 flex items-center gap-1">
                                             <FileText className="w-3 h-3" /> پاسخ هوش مصنوعی
                                         </h4>
-                                        <p className="text-slate-600 leading-6 text-xs text-justify">{res.generatedAnswer}</p>
+                                        <p className="text-surface-300 leading-6 text-xs text-justify">{res.generatedAnswer}</p>
                                     </div>
                                     
                                     {/* RAGAS Breakdown */}
-                                    <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
-                                        <div className="bg-emerald-50 p-2 rounded text-xs text-emerald-800 flex justify-between">
+                                    <div className="mt-4 pt-3 border-t border-white/5 grid grid-cols-2 gap-2">
+                                        <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded text-xs text-emerald-400 flex justify-between">
                                             <span>وفاداری به متن:</span>
                                             <span className="font-bold">{toPersianDigits(((res.faithfulnessScore || 0) * 100).toFixed(0))}٪</span>
                                         </div>
-                                        <div className="bg-blue-50 p-2 rounded text-xs text-blue-800 flex justify-between">
+                                        <div className="bg-blue-500/10 border border-blue-500/20 p-2 rounded text-xs text-blue-400 flex justify-between">
                                             <span>ارتباط با سوال:</span>
                                             <span className="font-bold">{toPersianDigits(((res.relevanceScore || 0) * 100).toFixed(0))}٪</span>
                                         </div>
@@ -364,16 +364,16 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
 
                                     {/* Feedback Buttons */}
                                     <div className="mt-3 flex items-center justify-end gap-2">
-                                        <span className="text-[10px] text-slate-400 ml-1">بازخورد دستی:</span>
+                                        <span className="text-[10px] text-surface-500 ml-1">بازخورد دستی:</span>
                                         <button 
                                             onClick={() => handleFeedback(res, 1)}
-                                            className={`p-1.5 rounded-lg transition-all ${currentFeedback === 1 ? 'bg-emerald-100 text-emerald-600' : 'hover:bg-slate-100 text-slate-400'}`}
+                                            className={`p-1.5 rounded-lg transition-all ${currentFeedback === 1 ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-surface-700 text-surface-500'}`}
                                         >
                                             <ThumbsUp className="w-3.5 h-3.5" />
                                         </button>
                                         <button 
                                             onClick={() => handleFeedback(res, -1)}
-                                            className={`p-1.5 rounded-lg transition-all ${currentFeedback === -1 ? 'bg-red-100 text-red-600' : 'hover:bg-slate-100 text-slate-400'}`}
+                                            className={`p-1.5 rounded-lg transition-all ${currentFeedback === -1 ? 'bg-red-500/20 text-red-400' : 'hover:bg-surface-700 text-surface-500'}`}
                                         >
                                             <ThumbsDown className="w-3.5 h-3.5" />
                                         </button>
@@ -384,17 +384,17 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                             {/* Sources Used */}
                             {res.retrievedSources.length > 0 ? (
                                 <div>
-                                    <span className="text-[10px] font-bold text-slate-500 mb-1 block">منابع استفاده شده:</span>
+                                    <span className="text-[10px] font-bold text-surface-500 mb-1 block">منابع استفاده شده:</span>
                                     <div className="flex flex-wrap gap-2">
                                         {res.retrievedSources.map((src, i) => (
-                                            <span key={i} className="text-[10px] bg-slate-200 text-slate-600 px-2 py-1 rounded truncate max-w-[200px]" title={src.snippet}>
+                                            <span key={i} className="text-[10px] bg-surface-800 text-surface-400 px-2 py-1 rounded truncate max-w-[200px] border border-white/5" title={src.snippet}>
                                                 {src.id} (ص {toPersianDigits(src.page)})
                                             </span>
                                         ))}
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex items-center gap-2 text-red-500 text-xs bg-red-50 p-2 rounded">
+                                <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 p-2 rounded">
                                     <AlertTriangle className="w-3 h-3" />
                                     هیچ منبعی یافت نشد (ریسک توهم بالا)
                                 </div>
@@ -410,44 +410,44 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans" dir="rtl">
-      <div className="bg-white rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 font-sans animate-in fade-in duration-200" dir="rtl">
+      <div className="bg-surface-900/90 border border-white/10 rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-white backdrop-blur-xl">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-white/5">
           <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-500/30">
+            <div className="bg-gradient-to-br from-brand-600 to-brand-800 p-2 rounded-lg text-white shadow-lg shadow-brand-500/20">
               <Award className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-800">سیستم ارزیابی خودکار (RAGAS Benchmark)</h2>
-              <p className="text-xs text-slate-500 mt-1">سنجش وفاداری و دقت پاسخ‌ها با استفاده از هوش مصنوعی</p>
+              <h2 className="text-xl font-bold text-white tracking-wide">سیستم ارزیابی خودکار (RAGAS Benchmark)</h2>
+              <p className="text-xs text-surface-400 mt-1">سنجش وفاداری و دقت پاسخ‌ها با استفاده از هوش مصنوعی</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-surface-400 hover:text-white transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex px-6 border-b border-slate-100 bg-slate-50 gap-4">
+        <div className="flex px-6 border-b border-white/5 bg-white/5 gap-4">
             <button 
                 onClick={() => setActiveTab('run')}
-                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'run' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'run' ? 'border-brand-500 text-brand-400' : 'border-transparent text-surface-400 hover:text-white'}`}
             >
                 <Play className="w-4 h-4" />
                 اجرای تست جدید
             </button>
             <button 
                 onClick={() => setActiveTab('autotune')}
-                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'autotune' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'autotune' ? 'border-brand-500 text-brand-400' : 'border-transparent text-surface-400 hover:text-white'}`}
             >
                 <Gauge className="w-4 h-4" />
                 بهینه‌ساز هوشمند (Auto-Tuner)
             </button>
             <button 
                 onClick={() => setActiveTab('history')}
-                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'history' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'history' ? 'border-brand-500 text-brand-400' : 'border-transparent text-surface-400 hover:text-white'}`}
             >
                 <History className="w-4 h-4" />
                 تاریخچه و گزارشات
@@ -455,20 +455,20 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-6 bg-surface-950/30 custom-scrollbar">
             
             {/* --- RUN TAB --- */}
             {activeTab === 'run' && (
                 <>
                     {/* Control Panel */}
                     {!isRunning && results.length === 0 && (
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-6">
+                        <div className="bg-surface-800/30 p-6 rounded-xl border border-white/10 shadow-sm mb-6 animate-in slide-in-from-right-4">
                             
                             {/* Dataset Selection */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                                 <button 
                                     onClick={() => setDatasetMode('standard')}
-                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'standard' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
+                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'standard' ? 'border-brand-500 bg-brand-500/10 text-brand-300' : 'border-white/10 text-surface-400 hover:border-brand-500/50 hover:bg-surface-800'}`}
                                 >
                                     <Database className="w-6 h-6" />
                                     <span className="font-bold text-sm">دیتاست استاندارد</span>
@@ -476,7 +476,7 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                 </button>
                                 <button 
                                     onClick={() => setDatasetMode('custom')}
-                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'custom' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
+                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'custom' ? 'border-brand-500 bg-brand-500/10 text-brand-300' : 'border-white/10 text-surface-400 hover:border-brand-500/50 hover:bg-surface-800'}`}
                                 >
                                     <FileType className="w-6 h-6" />
                                     <span className="font-bold text-sm">بنچمارک سفارشی</span>
@@ -484,7 +484,7 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                 </button>
                                 <button 
                                     onClick={() => setDatasetMode('ticket')}
-                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'ticket' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
+                                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${datasetMode === 'ticket' ? 'border-brand-500 bg-brand-500/10 text-brand-300' : 'border-white/10 text-surface-400 hover:border-brand-500/50 hover:bg-surface-800'}`}
                                 >
                                     <Ticket className="w-6 h-6" />
                                     <span className="font-bold text-sm">بنچمارک تیکت‌ها</span>
@@ -504,11 +504,11 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                     />
                                     <button 
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="w-full border-2 border-dashed border-slate-300 rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all"
+                                        className="w-full border-2 border-dashed border-white/10 bg-surface-950/30 rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-surface-400 hover:border-brand-500/50 hover:text-brand-400 transition-all"
                                     >
                                         <Upload className="w-8 h-8" />
                                         {customDataset.length > 0 ? (
-                                            <span className="font-bold text-emerald-600 flex items-center gap-2">
+                                            <span className="font-bold text-emerald-400 flex items-center gap-2">
                                                 <CheckCircle2 className="w-4 h-4" />
                                                 {toPersianDigits(customDataset.length)} تست بارگذاری شد
                                             </span>
@@ -532,11 +532,11 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                     />
                                     <button 
                                         onClick={() => ticketInputRef.current?.click()}
-                                        className="w-full border-2 border-dashed border-slate-300 rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all"
+                                        className="w-full border-2 border-dashed border-white/10 bg-surface-950/30 rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-surface-400 hover:border-brand-500/50 hover:text-brand-400 transition-all"
                                     >
                                         <MessageSquare className="w-8 h-8" />
                                         {ticketDataset.length > 0 ? (
-                                            <span className="font-bold text-emerald-600 flex items-center gap-2">
+                                            <span className="font-bold text-emerald-400 flex items-center gap-2">
                                                 <CheckCircle2 className="w-4 h-4" />
                                                 {toPersianDigits(ticketDataset.length)} تیکت شناسایی شد
                                             </span>
@@ -552,8 +552,8 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                 <button 
                                     onClick={handleStart}
                                     disabled={(datasetMode === 'custom' && customDataset.length === 0) || (datasetMode === 'ticket' && ticketDataset.length === 0)}
-                                    className={`bg-indigo-600 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-105 flex items-center gap-2 ${
-                                        (datasetMode === 'custom' && customDataset.length === 0) || (datasetMode === 'ticket' && ticketDataset.length === 0) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700'
+                                    className={`bg-brand-600 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-brand-500/30 transition-all transform hover:scale-105 flex items-center gap-2 ${
+                                        (datasetMode === 'custom' && customDataset.length === 0) || (datasetMode === 'ticket' && ticketDataset.length === 0) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-brand-500'
                                     }`}
                                 >
                                     <Play className="w-5 h-5" />
@@ -566,13 +566,13 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                     {/* Progress Bar */}
                     {isRunning && (
                         <div className="mb-8">
-                            <div className="flex justify-between text-sm font-medium text-slate-600 mb-2">
+                            <div className="flex justify-between text-sm font-medium text-surface-300 mb-2">
                                 <span>در حال تولید پاسخ و ارزیابی RAGAS...</span>
                                 <span>{toPersianDigits(progress)} از {toPersianDigits(totalCases)}</span>
                             </div>
-                            <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                            <div className="w-full bg-surface-800 rounded-full h-3 overflow-hidden border border-white/5">
                                 <div 
-                                    className="bg-indigo-600 h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+                                    className="bg-brand-600 h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden shadow-[0_0_10px_rgba(99,102,241,0.5)]"
                                     style={{ width: `${(progress / totalCases) * 100}%` }}
                                 >
                                     <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
@@ -595,17 +595,17 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
             {activeTab === 'autotune' && (
                 <div className="flex flex-col h-full animate-in slide-in-from-right-2">
                     {!isRunning && !winnerConfig ? (
-                         <div className="flex flex-col items-center justify-center p-10 bg-white rounded-xl border border-slate-200 text-center shadow-sm">
-                             <div className="w-20 h-20 bg-violet-100 text-violet-600 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                         <div className="flex flex-col items-center justify-center p-10 bg-surface-800/30 rounded-xl border border-white/10 text-center shadow-sm">
+                             <div className="w-20 h-20 bg-brand-500/20 text-brand-400 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-brand-500/10 border border-brand-500/30">
                                  <Zap className="w-10 h-10" />
                              </div>
-                             <h3 className="text-2xl font-black text-slate-800 mb-3">تیونینگ خودکار پارامترها (Auto-Tuner)</h3>
-                             <p className="text-slate-500 max-w-lg leading-7 mb-8">
+                             <h3 className="text-2xl font-black text-white mb-3">تیونینگ خودکار پارامترها (Auto-Tuner)</h3>
+                             <p className="text-surface-400 max-w-lg leading-7 mb-8">
                                  این ابزار به صورت خودکار استراتژی‌های مختلف جستجو (مثل تنظیمات Min Confidence، Temperature و وزن‌دهی کلمات کلیدی) را تست می‌کند و آنقدر تکرار می‌کند تا به امتیاز دقت بالای <strong>۸۵٪</strong> برسد.
                              </p>
                              <button 
                                 onClick={handleAutoTuneStart}
-                                className="bg-violet-600 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-violet-500/30 transition-all hover:bg-violet-700 hover:scale-105 flex items-center gap-2"
+                                className="bg-brand-600 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-500 hover:scale-105 flex items-center gap-2"
                              >
                                 <Play className="w-5 h-5" />
                                 شروع عملیات بهینه‌سازی
@@ -615,15 +615,15 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                         <div className="space-y-6">
                             {/* Running Status */}
                             {isRunning && (
-                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-6 animate-pulse">
+                                <div className="bg-surface-800/50 p-6 rounded-xl border border-white/10 shadow-sm flex items-center gap-6 animate-pulse">
                                     <div className="relative w-16 h-16">
-                                        <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
-                                        <div className="absolute inset-0 border-4 border-violet-500 rounded-full border-t-transparent animate-spin"></div>
+                                        <div className="absolute inset-0 border-4 border-surface-700 rounded-full"></div>
+                                        <div className="absolute inset-0 border-4 border-brand-500 rounded-full border-t-transparent animate-spin"></div>
                                     </div>
                                     <div>
-                                        <h4 className="font-bold text-lg text-slate-800">در حال جستجوی بهترین تنظیمات...</h4>
-                                        <p className="text-sm text-slate-500">آزمایش استراتژی‌های مختلف روی مجموعه داده کامل</p>
-                                        {activeStrategyName && <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded mt-2 inline-block">استراتژی فعلی: {activeStrategyName}</span>}
+                                        <h4 className="font-bold text-lg text-white">در حال جستجوی بهترین تنظیمات...</h4>
+                                        <p className="text-sm text-surface-400">آزمایش استراتژی‌های مختلف روی مجموعه داده کامل</p>
+                                        {activeStrategyName && <span className="text-xs bg-brand-500/20 text-brand-300 px-2 py-0.5 rounded mt-2 inline-block border border-brand-500/30">استراتژی فعلی: {activeStrategyName}</span>}
                                     </div>
                                 </div>
                             )}
@@ -631,14 +631,14 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                             {/* Results Timeline */}
                             <div className="space-y-4">
                                 {tuningSteps.map((step, idx) => (
-                                    <div key={idx} className={`p-4 rounded-xl border flex items-center justify-between transition-all animate-in slide-in-from-bottom-2 ${step.pass ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                                    <div key={idx} className={`p-4 rounded-xl border flex items-center justify-between transition-all animate-in slide-in-from-bottom-2 ${step.pass ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-surface-800/30 border-white/5'}`}>
                                         <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border ${step.pass ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border ${step.pass ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-surface-800 text-surface-500 border-surface-700'}`}>
                                                 {idx + 1}
                                             </div>
                                             <div>
-                                                <h5 className="font-bold text-slate-800">{step.strategyName}</h5>
-                                                <div className="text-xs text-slate-500 font-mono mt-1 flex gap-3">
+                                                <h5 className="font-bold text-white">{step.strategyName}</h5>
+                                                <div className="text-xs text-surface-400 font-mono mt-1 flex gap-3">
                                                     <span>Conf: {step.config.minConfidence}</span>
                                                     <span>Temp: {step.config.temperature}</span>
                                                     <span>VecWeight: {step.config.vectorWeight}</span>
@@ -646,10 +646,10 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <div className={`text-xl font-black ${step.pass ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                            <div className={`text-xl font-black ${step.pass ? 'text-emerald-400' : 'text-surface-500'}`}>
                                                 {toPersianDigits((step.score * 100).toFixed(1))}٪
                                             </div>
-                                            <div className="text-[10px] text-slate-400">Score</div>
+                                            <div className="text-[10px] text-surface-500">Score</div>
                                         </div>
                                     </div>
                                 ))}
@@ -657,29 +657,29 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
 
                             {/* Winner Screen */}
                             {winnerConfig && (
-                                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-8 rounded-2xl text-white shadow-2xl animate-in zoom-in-95 duration-500 text-center">
-                                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-sm">
+                                <div className="bg-gradient-to-br from-emerald-600 to-teal-800 p-8 rounded-2xl text-white shadow-2xl animate-in zoom-in-95 duration-500 text-center border border-emerald-500/30">
+                                    <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-sm shadow-inner border border-white/20">
                                         <Award className="w-10 h-10 text-white" />
                                     </div>
                                     <h2 className="text-3xl font-black mb-2">تنظیمات بهینه پیدا شد!</h2>
                                     <p className="opacity-90 mb-8">استراتژی <span className="font-bold border-b border-white/40 pb-0.5 mx-1">{winnerConfig.strategyName}</span> بهترین عملکرد را داشت.</p>
                                     
                                     <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto mb-8">
-                                        <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                                        <div className="bg-black/20 p-3 rounded-xl backdrop-blur-sm border border-white/10">
                                             <div className="text-xs opacity-70 mb-1">Min Confidence</div>
                                             <div className="font-mono font-bold text-lg">{winnerConfig.minConfidence}</div>
                                         </div>
-                                        <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                                        <div className="bg-black/20 p-3 rounded-xl backdrop-blur-sm border border-white/10">
                                             <div className="text-xs opacity-70 mb-1">Temperature</div>
                                             <div className="font-mono font-bold text-lg">{winnerConfig.temperature}</div>
                                         </div>
-                                        <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                                        <div className="bg-black/20 p-3 rounded-xl backdrop-blur-sm border border-white/10">
                                             <div className="text-xs opacity-70 mb-1">Vector Weight</div>
                                             <div className="font-mono font-bold text-lg">{winnerConfig.vectorWeight}</div>
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/20 p-4 rounded-xl text-sm flex items-center justify-center gap-2">
+                                    <div className="bg-white/10 p-4 rounded-xl text-sm flex items-center justify-center gap-2 border border-white/10">
                                         <Settings className="w-4 h-4" />
                                         این تنظیمات به صورت خودکار روی سیستم اعمال شدند.
                                     </div>
@@ -694,34 +694,34 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
             {activeTab === 'history' && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
                     {/* List of Runs */}
-                    <div className="md:col-span-1 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col h-full max-h-[600px]">
-                        <div className="p-4 border-b border-slate-100 font-bold text-slate-700 flex items-center gap-2">
+                    <div className="md:col-span-1 bg-surface-800/30 border border-white/10 rounded-xl overflow-hidden flex flex-col h-full max-h-[600px]">
+                        <div className="p-4 border-b border-white/5 font-bold text-surface-200 flex items-center gap-2 bg-surface-800/50">
                             <History className="w-4 h-4" />
                             لیست گزارشات
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
                             {history.length === 0 ? (
-                                <p className="text-center text-slate-400 text-xs py-8">هنوز تستی اجرا نشده است.</p>
+                                <p className="text-center text-surface-500 text-xs py-8">هنوز تستی اجرا نشده است.</p>
                             ) : (
                                 history.map(run => (
                                     <div 
                                         key={run.id}
                                         onClick={() => setSelectedHistoryRun(run)}
-                                        className={`p-3 rounded-lg cursor-pointer border transition-all ${selectedHistoryRun?.id === run.id ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-transparent hover:bg-white hover:border-slate-200 hover:shadow-sm'}`}
+                                        className={`p-3 rounded-lg cursor-pointer border transition-all ${selectedHistoryRun?.id === run.id ? 'bg-brand-500/20 border-brand-500/50' : 'bg-surface-800/50 border-transparent hover:bg-surface-800 hover:border-white/10'}`}
                                     >
                                         <div className="flex justify-between items-start mb-1">
-                                            <span className="font-bold text-slate-700 text-xs">
+                                            <span className="font-bold text-surface-200 text-xs">
                                                 {new Date(run.timestamp).toLocaleDateString('fa-IR')}
                                             </span>
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${run.avgScore > 0.8 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${run.avgScore > 0.8 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
                                                 {toPersianDigits((run.avgScore * 100).toFixed(0))}٪
                                             </span>
                                         </div>
-                                        <div className="flex justify-between items-center text-[10px] text-slate-500">
+                                        <div className="flex justify-between items-center text-[10px] text-surface-500">
                                             <span>{new Date(run.timestamp).toLocaleTimeString('fa-IR', {hour: '2-digit', minute:'2-digit'})}</span>
                                             <button 
                                                 onClick={(e) => handleDeleteRun(e, run.id)}
-                                                className="p-1 hover:bg-red-100 hover:text-red-600 rounded text-slate-300 transition-colors"
+                                                className="p-1 hover:bg-red-500/20 hover:text-red-400 rounded text-surface-600 transition-colors"
                                             >
                                                 <Trash2 className="w-3 h-3" />
                                             </button>
@@ -737,10 +737,10 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                         {selectedHistoryRun ? (
                             <div className="flex flex-col h-full">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h3 className="font-bold text-slate-800">جزئیات گزارش</h3>
+                                    <h3 className="font-bold text-white">جزئیات گزارش</h3>
                                     <button 
                                         onClick={() => handleDownloadReport(selectedHistoryRun)}
-                                        className="flex items-center gap-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors shadow-sm"
+                                        className="flex items-center gap-2 text-xs bg-brand-600 hover:bg-brand-500 text-white px-3 py-2 rounded-lg transition-colors shadow-sm"
                                     >
                                         <Download className="w-4 h-4" />
                                         دانلود گزارش کامل (JSON)
@@ -754,7 +754,7 @@ const BenchmarkModal: React.FC<BenchmarkModalProps> = ({ isOpen, onClose, chunks
                                 </div>
                             </div>
                         ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                            <div className="h-full flex flex-col items-center justify-center text-surface-500 border-2 border-dashed border-white/5 rounded-xl bg-surface-900/30">
                                 <FileText className="w-12 h-12 mb-2 opacity-50" />
                                 <p className="text-sm">یک گزارش را از لیست انتخاب کنید</p>
                             </div>

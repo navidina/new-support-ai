@@ -23,10 +23,10 @@ interface SidebarProps {
 }
 
 const graphModes = [
-    { id: 'galaxy', label: 'کهکشان دانش (Galaxy)', icon: Orbit, desc: 'نمایش تراکم و حجم دانش به صورت خوشه‌های کیهانی' },
-    { id: 'schema', label: 'طرح‌واره (Schema)', icon: Box, desc: 'نمایش ساختار سیستم‌ها و مشکلات' },
+    { id: 'galaxy', label: 'کهکشان دانش (Galaxy)', icon: Orbit, desc: 'تراکم و حجم دانش به صورت خوشه‌ها' },
+    { id: 'schema', label: 'طرح‌واره (Schema)', icon: Box, desc: 'ساختار سیستم‌ها و مشکلات' },
     { id: 'tree', label: 'سلسله‌مراتب (Hierarchy)', icon: Workflow, desc: 'نمایش درختی بالا به پایین' },
-    { id: 'graphrag', label: 'گراف دانش سازمانی (GraphRAG)', icon: GitMerge, desc: 'نمایش موجودیت‌ها و روابط خوشه‌بندی شده' },
+    { id: 'graphrag', label: 'گراف دانش (GraphRAG)', icon: GitMerge, desc: 'موجودیت‌ها و روابط معنایی' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -46,7 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
 
   return (
-    <div className="w-80 h-full flex flex-col bg-brand-950 text-surface-300 border-l border-brand-900 relative font-sans">
+    <div className="w-80 h-full flex flex-col bg-surface-900/60 backdrop-blur-xl border-l border-white/5 relative font-sans text-surface-300">
       
       {/* Brand Header */}
       <div className="p-6 pb-2 z-10">
@@ -56,30 +56,31 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div>
             <h1 className="text-lg font-black text-white tracking-tight leading-none">رایان هم‌افزا</h1>
-            <span className="text-[10px] text-surface-400 font-medium tracking-wide">Enterprise AI Assistant</span>
+            <span className="text-[10px] text-brand-300 font-medium tracking-wide uppercase">Enterprise AI</span>
           </div>
         </div>
 
         {/* Primary Actions */}
         {activeView === 'chat' && onNewChat && (
-            <Button 
-              variant="secondary" 
-              className="w-full justify-start mb-6 bg-white hover:bg-surface-50 text-brand-900 border-none shadow-md" 
+            <button 
+              className="w-full flex items-center gap-3 px-4 py-3 mb-6 bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white rounded-xl shadow-lg shadow-brand-900/50 transition-all transform active:scale-95 group font-bold text-sm" 
               onClick={onNewChat}
-              icon={<Plus className="w-5 h-5 text-brand-600" />}
             >
-              گفتگوی جدید
-            </Button>
+              <div className="bg-white/20 p-1 rounded-lg">
+                  <Plus className="w-4 h-4" />
+              </div>
+              <span>گفتگوی جدید</span>
+            </button>
         )}
 
         {/* View Switcher */}
         {onViewChange && (
-            <div className="bg-brand-900/50 p-1 rounded-xl flex gap-1 mb-2 border border-brand-800">
+            <div className="bg-surface-950/50 p-1 rounded-xl flex gap-1 mb-2 border border-white/5">
                 <button 
                     onClick={() => onViewChange('chat')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${
                         activeView === 'chat' 
-                        ? 'bg-brand-800 text-white shadow-sm ring-1 ring-brand-700' 
+                        ? 'bg-surface-800 text-white shadow-sm ring-1 ring-white/10' 
                         : 'text-surface-500 hover:text-surface-300'
                     }`}
                 >
@@ -90,7 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => onViewChange('graph')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${
                         activeView === 'graph' 
-                        ? 'bg-brand-800 text-white shadow-sm ring-1 ring-brand-700' 
+                        ? 'bg-surface-800 text-white shadow-sm ring-1 ring-white/10' 
                         : 'text-surface-500 hover:text-surface-300'
                     }`}
                 >
@@ -105,13 +106,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar space-y-1 z-10">
             {activeView === 'chat' ? (
                 <>
-                    <div className="text-[10px] font-bold text-surface-500 px-2 mb-2 uppercase tracking-wider flex items-center gap-2">
+                    <div className="text-[10px] font-bold text-surface-500 px-2 mb-2 uppercase tracking-widest flex items-center gap-2">
                         <History className="w-3 h-3" />
-                        تاریخچه گفتگوها
+                        تاریخچه
                     </div>
                     
                     {conversations.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-10 opacity-30 border-2 border-dashed border-brand-800 rounded-xl mt-2">
+                        <div className="flex flex-col items-center justify-center py-10 opacity-30 border border-dashed border-surface-700 rounded-xl mt-2">
                             <MessageSquare className="w-6 h-6 mb-2" />
                             <span className="text-xs">خالی</span>
                         </div>
@@ -122,14 +123,19 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => onSelectConversation?.(conv.id)}
                                 className={`group relative p-3 rounded-xl cursor-pointer transition-all duration-200 border border-transparent ${
                                     currentConversationId === conv.id 
-                                    ? 'bg-brand-600/10 text-white border-brand-500/20' 
-                                    : 'text-surface-400 hover:bg-brand-800 hover:text-surface-200'
+                                    ? 'bg-brand-500/10 text-white border-brand-500/20 shadow-[0_0_15px_-5px_rgba(99,102,241,0.3)]' 
+                                    : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'
                                 }`}
                             >
-                                <h4 className="text-xs font-medium line-clamp-1 mb-1 leading-relaxed">
+                                {/* Active Indicator */}
+                                {currentConversationId === conv.id && (
+                                    <div className="absolute right-0 top-3 bottom-3 w-1 bg-brand-500 rounded-l-full shadow-[0_0_8px_#6366f1]"></div>
+                                )}
+                                
+                                <h4 className={`text-xs font-medium line-clamp-1 mb-1 leading-relaxed ${currentConversationId === conv.id ? 'pr-2' : ''}`}>
                                     {conv.title}
                                 </h4>
-                                <div className="flex items-center justify-between text-[10px] opacity-50 font-mono">
+                                <div className={`flex items-center justify-between text-[10px] opacity-50 font-sans ${currentConversationId === conv.id ? 'pr-2' : ''}`}>
                                     <span>
                                         {new Date(conv.lastUpdated).toLocaleDateString('fa-IR')}
                                     </span>
@@ -147,7 +153,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </>
             ) : (
                 <>
-                    <div className="text-[10px] font-bold text-surface-500 px-2 mb-2 uppercase tracking-wider flex items-center gap-2">
+                    <div className="text-[10px] font-bold text-surface-500 px-2 mb-2 uppercase tracking-widest flex items-center gap-2">
                         <Network className="w-3 h-3" />
                         الگوی نمایش گراف
                     </div>
@@ -159,11 +165,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => onGraphLayoutChange?.(mode.id as GraphLayoutMode)}
                                 className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all text-right border ${
                                     activeGraphLayout === mode.id
-                                    ? 'bg-brand-800 text-white border-brand-700 shadow-lg'
-                                    : 'bg-transparent text-surface-400 border-transparent hover:bg-brand-900 hover:text-surface-200'
+                                    ? 'bg-brand-500/10 text-white border-brand-500/30 shadow-neon'
+                                    : 'bg-transparent text-surface-400 border-transparent hover:bg-surface-800 hover:text-surface-200'
                                 }`}
                             >
-                                <div className={`p-2 rounded-lg ${activeGraphLayout === mode.id ? 'bg-brand-700' : 'bg-brand-900'}`}>
+                                <div className={`p-2 rounded-lg ${activeGraphLayout === mode.id ? 'bg-brand-600 text-white' : 'bg-surface-800 text-surface-500'}`}>
                                     <mode.icon className="w-4 h-4" />
                                 </div>
                                 <div>
@@ -178,24 +184,24 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Footer / Tools */}
-      <div className="p-4 border-t border-brand-900 bg-brand-950 z-10">
+      <div className="p-4 border-t border-white/5 bg-surface-950/30 z-10">
          <div className="grid grid-cols-2 gap-2 mb-3">
-             <button onClick={onOpenBenchmark} className="flex flex-col items-center justify-center p-3 rounded-xl bg-brand-900 hover:bg-brand-800 border border-brand-800 transition-all group">
-                <ClipboardCheck className="w-5 h-5 text-brand-400 mb-1 group-hover:scale-110 transition-transform" />
+             <button onClick={onOpenBenchmark} className="flex flex-col items-center justify-center p-3 rounded-xl bg-surface-800/50 hover:bg-surface-800 border border-white/5 hover:border-white/10 transition-all group">
+                <ClipboardCheck className="w-5 h-5 text-brand-400 mb-1 group-hover:scale-110 transition-transform drop-shadow-[0_0_5px_rgba(129,140,248,0.5)]" />
                 <span className="text-[10px] font-bold text-surface-300">بنچمارک</span>
              </button>
-             <button onClick={onOpenWiki} className="flex flex-col items-center justify-center p-3 rounded-xl bg-brand-900 hover:bg-brand-800 border border-brand-800 transition-all group">
-                <Book className="w-5 h-5 text-emerald-400 mb-1 group-hover:scale-110 transition-transform" />
+             <button onClick={onOpenWiki} className="flex flex-col items-center justify-center p-3 rounded-xl bg-surface-800/50 hover:bg-surface-800 border border-white/5 hover:border-white/10 transition-all group">
+                <Book className="w-5 h-5 text-emerald-400 mb-1 group-hover:scale-110 transition-transform drop-shadow-[0_0_5px_rgba(52,211,153,0.5)]" />
                 <span className="text-[10px] font-bold text-surface-300">مخزن دانش</span>
              </button>
          </div>
 
          <div className="flex items-center gap-2">
-             <button onClick={onOpenSettings} className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-xs font-medium text-surface-400 hover:text-white transition-colors">
+             <button onClick={onOpenSettings} className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl bg-surface-800/50 hover:bg-surface-700 text-xs font-medium text-surface-400 hover:text-white transition-colors">
                 <Settings className="w-4 h-4" />
                 <span>تنظیمات</span>
              </button>
-             <button onClick={onOpenHelp} className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-xs font-medium text-surface-400 hover:text-white transition-colors">
+             <button onClick={onOpenHelp} className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl bg-surface-800/50 hover:bg-surface-700 text-xs font-medium text-surface-400 hover:text-white transition-colors">
                 <HelpCircle className="w-4 h-4" />
                 <span>راهنما</span>
              </button>
