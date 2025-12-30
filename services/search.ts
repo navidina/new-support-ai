@@ -376,13 +376,16 @@ export const processQuery = async (
             const rerankedResults = await rerankChunks(effectiveQuery, candidatesForRerank, 8); // Get Top 8 Golden results
             
             // Map back to our structure, replacing score with high-precision Rerank Score
-            topCandidates = rerankedResults.map((r: any) => ({
-                id: r.id,
-                chunk: r.chunk,
-                vectorScore: r.vectorScore,
-                density: r.density,
-                finalScore: r.rerankScore // Trust the Cross-Encoder score
-            }));
+            // AND Filter by Confidence Threshold
+            topCandidates = rerankedResults
+                .map((r: any) => ({
+                    id: r.id,
+                    chunk: r.chunk,
+                    vectorScore: r.vectorScore,
+                    density: r.density,
+                    finalScore: r.rerankScore // Trust the Cross-Encoder score
+                }))
+                .filter((r: any) => r.finalScore > 0.3); // ★ Critical Threshold: Discard < 0.3
             
         } catch (e) {
             console.error("Reranking failed, falling back to hybrid score", e);
@@ -390,7 +393,22 @@ export const processQuery = async (
         }
     }
 
-    // Fallback Strategy: Multi-Query if Broad Recall failed
+    // Exit immediately if filtering removed everything
+    if (topCandidates.length === 0) {
+        return {
+            text: "متاسفانه اطلاعات دقیقی در مستندات یافت نشد.", // Prevents Hallucination
+            sources: [],
+            debugInfo: {
+                strategy: searchOverrides?.strategyName || 'No Match (Filtered)',
+                processingTimeMs: Date.now() - startTime,
+                candidateCount: 0,
+                logicStep: 'All candidates filtered by Reranker (< 0.3)',
+                extractedKeywords: criticalTerms
+            }
+        };
+    }
+
+    // Fallback Strategy: Multi-Query if Broad Recall failed (Initial broadCandidates empty)
     if (topCandidates.length === 0) {
         onProgress?.({ 
             step: 'searching', 
