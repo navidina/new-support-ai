@@ -3,7 +3,7 @@ import { getSettings } from './settings';
 import { KnowledgeChunk } from '../types';
 
 // ==========================================
-// CONNECTION HEALTH CHECK
+// CONNECTION HEALTH CHECK & UTILS
 // ==========================================
 
 export const checkOllamaConnection = async (): Promise<boolean> => {
@@ -23,9 +23,6 @@ export const checkOllamaConnection = async (): Promise<boolean> => {
     }
 };
 
-/**
- * Sends a dummy request to ensure the model is loaded in VRAM.
- */
 export const preWarmModel = async (): Promise<boolean> => {
     try {
         const settings = getSettings();
@@ -44,45 +41,26 @@ export const preWarmModel = async (): Promise<boolean> => {
     }
 };
 
-/**
- * Clean text specifically for embedding generation.
- */
 const sanitizeForEmbedding = (text: string): string => {
     if (!text) return "";
-    return text
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // Remove control chars
-        .replace(/\s+/g, " ")
-        .trim();
+    return text.replace(/[\u0000-\u001F\u007F-\u009F]/g, "").replace(/\s+/g, " ").trim();
 };
 
 export const getEmbedding = async (text: string, isQuery: boolean = false): Promise<number[]> => {
   const settings = getSettings();
-  
-  if (!text || !text.trim()) {
-      return new Array(1024).fill(0);
-  }
+  if (!text || !text.trim()) return new Array(1024).fill(0);
 
-  // Truncate to safe limit (approx 2048 chars)
   const processedText = sanitizeForEmbedding(text).substring(0, 2048);
-  
   let prompt = processedText;
 
-  // Formatting logic based on Model Type
   if (settings.embeddingModel.includes('intfloat-multilingual-e5-large-instruct')) {
-      // Specific logic for intfloat-multilingual-e5-large-instruct
       if (isQuery) {
-          // Structure: Instruct: {task_description}\nQuery: {query}
           const taskDescription = "Given a web search query, retrieve relevant passages that answer the query";
           prompt = `Instruct: ${taskDescription}\nQuery: ${processedText}`;
-      } else {
-          // Documents do not need any special structure
-          prompt = processedText;
       }
   } else if (settings.embeddingModel.includes('nomic')) {
-      // Nomic specific prefixes
       prompt = (isQuery ? 'search_query: ' : 'search_document: ') + processedText;
   } else {
-      // Fallback/Generic E5
       prompt = (isQuery ? 'query: ' : 'passage: ') + processedText;
   }
   
@@ -90,44 +68,71 @@ export const getEmbedding = async (text: string, isQuery: boolean = false): Prom
       const response = await fetch(`${settings.ollamaBaseUrl}/api/embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: settings.embeddingModel,
-          prompt: prompt,
-        }),
+        body: JSON.stringify({ model: settings.embeddingModel, prompt: prompt }),
       });
 
-      if (!response.ok) {
-          throw new Error(`Ollama API Error (${response.status})`);
-      }
-
+      if (!response.ok) throw new Error(`Ollama API Error (${response.status})`);
       const data = await response.json();
-      if (!data.embedding || !Array.isArray(data.embedding)) {
-          throw new Error("Invalid response format");
-      }
-      
-      // Safety check for NaN values in embedding vector
-      if (data.embedding.some((n: any) => isNaN(n))) {
-          console.error("Embedding contained NaN values");
-          return new Array(1024).fill(0);
-      }
-      
       return data.embedding;
-
   } catch (error: any) {
       console.error(`Embedding failed:`, error.message);
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-          throw new Error("OLLAMA_CONNECTION_REFUSED");
-      }
       return new Array(1024).fill(0);
   }
 };
 
+// ==========================================
+// DEEP SYNTHESIS ENGINE (PLANNER-WRITER ARCHITECTURE)
+// ==========================================
+
 /**
- * Deep Synthesis Generation Strategy
- * Uses a "Senior Technical Writer" persona with structured prompt engineering.
- * 1. Sorts chunks logically (File -> Page -> Index).
- * 2. Uses Sliding Window context for coherence between batches.
- * 3. Enforces strict Markdown structure.
+ * Phase 1: Blueprint Generation
+ * Generates a logical Table of Contents based on available sources metadata.
+ */
+const generateBlueprint = async (topicTitle: string, chunks: KnowledgeChunk[]): Promise<string> => {
+    const settings = getSettings();
+    
+    // Extract Metadata for the Planner (Titles and snippet beginnings)
+    const sources = Array.from(new Set(chunks.map(c => c.source.id)));
+    // We take a sample of content to give the planner an idea of what the topic covers
+    const sampleContent = chunks.slice(0, 8).map(c => c.content.substring(0, 150)).join("... \n");
+    
+    const systemPrompt = `
+تو "معمار اطلاعات" (Information Architect) هستی.
+هدف: ایجاد یک "فهرست مطالب" (Outline) برای یک مستند فنی درباره "${topicTitle}".
+ورودی: لیستی از فایل‌های منبع و نمونه محتوا.
+
+قوانین:
+1. خروجی فقط شامل لیست تیترهای اصلی (H2) و فرعی (H3) باشد.
+2. ترتیب منطقی باید رعایت شود (مقدمه -> مفاهیم -> پیکربندی/عملیات -> عیب‌یابی/نکات تکمیلی).
+3. هیچ متن اضافه‌ای ننویس، فقط لیست تیترها به فارسی.
+`;
+
+    const userPrompt = `منابع موجود: ${sources.join(', ')}\nنمونه محتوا: ${sampleContent}\n\nیک ساختار استاندارد و جامع برای این مستند پیشنهاد بده.`;
+
+    try {
+        const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: settings.chatModel,
+                stream: false,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ],
+                options: { temperature: 0.2, num_ctx: 2048 }
+            }),
+        });
+        const data = await response.json();
+        return data.message?.content || "ساختار عمومی: مقدمه، توضیحات فنی، جزئیات، نتیجه‌گیری";
+    } catch (e) {
+        console.error("Blueprint generation failed", e);
+        return "1. مقدمه و کلیات\n2. جزئیات فنی و فرآیندها\n3. نکات تکمیلی و مراجع";
+    }
+};
+
+/**
+ * Main Generation Function using Planner-Writer Pattern
  */
 export const generateSynthesizedDocument = async (
     topicTitle: string, 
@@ -136,70 +141,65 @@ export const generateSynthesizedDocument = async (
 ): Promise<string> => {
     const settings = getSettings();
     
-    // 1. SMART SORTING: Sort by source ID, then page, then creation index
-    // This helps maintain the logical flow of the original documents.
+    // 1. Sort Chunks Logically to help the model flow better
     const sortedChunks = Array.from(new Set(chunks)).sort((a, b) => {
+        // Prioritize "Introduction" or "General" files if possible
         if (a.source.id !== b.source.id) return a.source.id.localeCompare(b.source.id);
-        const pageA = a.source.page || 0;
-        const pageB = b.source.page || 0;
-        if (pageA !== pageB) return pageA - pageB;
-        return (a.createdAt || 0) - (b.createdAt || 0);
+        return (a.source.page || 0) - (b.source.page || 0);
     });
 
-    // 2. Adaptive Batching
-    // If chunks are few (<20), we send them all at once for best coherence.
-    // If many, we batch them to respect context window.
-    const BATCH_SIZE = 20; 
+    const BATCH_SIZE = 12; // Moderate batch size for better attention
     const totalBatches = Math.ceil(sortedChunks.length / BATCH_SIZE);
     
+    // 2. Phase 1: Blueprint Generation
+    if (onProgress) onProgress(0, totalBatches, "تحلیل ساختار و معماری سند (Blueprint)...");
+    const blueprint = await generateBlueprint(topicTitle, chunks);
+    
     let finalDocument = "";
-    let previousContextSummary = ""; // Sliding window context
+    let previousContextSummary = "هنوز متنی تولید نشده است."; 
 
+    // 3. Phase 2: Content Writing (Iterative)
     for (let i = 0; i < totalBatches; i++) {
         const start = i * BATCH_SIZE;
         const end = start + BATCH_SIZE;
         const batchChunks = sortedChunks.slice(start, end);
         
-        // Prepare Context with Citation Markers
-        const combinedContext = batchChunks.map(c => 
-            `--- START OF CHUNK FROM [${c.source.id}] ---\n${c.content}\n--- END OF CHUNK ---`
+        // Context Preparation with strict citation markers
+        const contextData = batchChunks.map(c => 
+            `[Source: ${c.source.id}]: ${c.content}`
         ).join('\n\n');
         
-        if (onProgress) onProgress(i + 1, totalBatches, i === 0 ? "طراحی ساختار سند..." : "نگارش محتوا...");
+        if (onProgress) onProgress(i + 1, totalBatches, `در حال نگارش بخش ${i + 1} از ${totalBatches}...`);
 
-        // 3. Structured Prompt Engineering
-        let systemInstruction = `
-تو یک "نویسنده فنی ارشد" (Senior Technical Writer) در یک شرکت نرم‌افزاری مالی هستی.
-وظیفه: نگارش یک "سند جامع فنی" (Technical Documentation) به زبان فارسی درباره موضوع "${topicTitle}".
+        const systemInstruction = `
+تو یک "نویسنده فنی ارشد" (Senior Technical Writer) هستی. در حال نوشتن بخش ${i + 1} از ${totalBatches} برای مستند "${topicTitle}" هستی.
 
-قوانین نگارش:
-۱. **ساختار:** متن باید دارای تیترهای اصلی (H2) و فرعی (H3) باشد. از بولت پوینت برای لیست‌ها استفاده کن.
-۲. **لحن:** رسمی، تخصصی و دقیق. از عبارات محاوره‌ای پرهیز کن.
-۳. **استناد:** تمام مطالب باید از "مستندات مرجع" استخراج شوند. از اطلاعات خارج از متن استفاده نکن.
-۴. **ارجاع:** در انتهای پاراگراف‌ها، منبع را به صورت [نام فایل] ذکر کن.
-۵. **فرمت:** خروجی باید Markdown تمیز باشد.
-۶. **یکپارچگی:** متن باید روان باشد، نه مجموعه‌ای از جملات گسسته. تکرارها را حذف کن.
+**نقشه راه (Outline) کلی سند:**
+${blueprint}
 
-${i === 0 ? `
-ساختار مورد انتظار برای بخش اول:
-- یک جدول "شناسنامه سند" (شامل عنوان، تاریخ تولید، و نویسنده: هوش مصنوعی).
-- مقدمه اجرایی (Executive Summary): تعریف کلی موضوع.
-- مفاهیم کلیدی: تعاریف پایه.` 
-: 
-`ادامه نگارش:
-- ادامه مباحث قبلی را به صورت منطقی پی بگیرید.
-- وارد جزئیات فنی، فرآیندها و جداول شوید.
-- اگر به انتهای مبحث رسیدید، یک بخش "عیب‌یابی و مشکلات متداول" اضافه کنید.`}
+**وظیفه شما:**
+اطلاعات خام زیر را پردازش کرده و بر اساس "نقشه راه" بالا، آن‌ها را به یک متن منسجم و حرفه‌ای تبدیل کن. اگر اطلاعات این بخش مربوط به قسمت‌های انتهایی نقشه راه است، آن‌ها را همانجا بنویس.
+
+**قوانین حیاتی:**
+۱. **سنتز (Synthesis) نه چسباندن:** جملات را عیناً کپی نکن. آن‌ها را بازنویسی کن تا خوانا و یکدست شوند.
+۲. **استناد دقیق (Citation):** هر جا ادعایی مطرح شد، منبع را دقیقاً به فرمت [SourceID: نام فایل] در پایان جمله بیاور. 
+   مثال صحیح: ...این خطا معمولاً به دلیل قطعی شبکه رخ می‌دهد [SourceID: error_logs.txt].
+۳. **قالب‌بندی:** از Markdown استفاده کن (تیترهای H2, H3، بولت پوینت).
+۴. **تداوم:** متن باید ادامه منطقی بخش قبلی باشد.
+۵. **حذف اضافات:** اگر اطلاعاتی تکراری یا بی‌ارزش است (مثل هدر/فوتر نامه)، آن را حذف کن.
+۶. **زبان:** فارسی رسمی و تخصصی.
+
+**خلاصه بخش‌های قبلی نوشته شده:**
+${previousContextSummary}
 `;
 
-        let userPrompt = `مستندات مرجع جدید:\n${combinedContext}`;
-        
-        // Sliding Window: Provide context from previous generation
-        if (previousContextSummary) {
-            userPrompt = `خلاصه بخش‌های قبلی که نوشتی:\n${previousContextSummary}\n\n` + userPrompt;
-        }
+        const userPrompt = `
+داده‌های خام جدید برای پردازش:
+---
+${contextData}
+---
 
-        userPrompt += `\n\nدستور کار: با استفاده از مستندات بالا، ${i === 0 ? 'بخش ابتدایی سند را بنویس.' : 'ادامه سند را بنویس و مباحث را تکمیل کن.'}`;
+دستور: این داده‌ها را تحلیل کن و متن نهایی این بخش را بنویس.`;
 
         try {
             const response = await fetch(`${settings.ollamaBaseUrl}/api/chat`, {
@@ -213,8 +213,9 @@ ${i === 0 ? `
                         { role: 'user', content: userPrompt }
                     ],
                     options: { 
-                        num_ctx: 4096, // Request larger context window
-                        temperature: 0.3 // Lower temp for factual consistency
+                        num_ctx: 4096, 
+                        temperature: 0.3, // Low temp for factual accuracy
+                        top_p: 0.9
                     }
                 }),
             });
@@ -223,19 +224,36 @@ ${i === 0 ? `
             const data = await response.json();
             const generatedText = data.message?.content || "";
             
+            // Append with spacing
             finalDocument += generatedText + "\n\n";
             
-            // Keep the last 500 chars as context for the next batch to ensure continuity
-            previousContextSummary = generatedText.slice(-500);
+            // Self-Correction/Summary for next context
+            // Taking the last 600 chars as a "short term memory" of what was just written
+            previousContextSummary = generatedText.slice(-600);
 
         } catch (error) {
             console.error(error);
-            finalDocument += "\n\n> [خطا در تولید این بخش به دلیل عدم پاسخگویی مدل]\n\n";
+            finalDocument += "\n\n> [خطا در پردازش این بخش]\n\n";
         }
     }
-    
-    // Add Footer
-    finalDocument += "\n\n---\n*این سند توسط سیستم هوشمند RAG رایان هم‌افزا به صورت خودکار تولید شده است.*";
-    
-    return finalDocument;
+
+    // 4. Phase 3: Final Touches (Metadata Table)
+    const metadataHeader = `
+# سند جامع: ${topicTitle}
+
+| ویژگی | مقدار |
+| :--- | :--- |
+| **تعداد منابع** | ${new Set(chunks.map(c=>c.source.id)).size} فایل |
+| **تاریخ تولید** | ${new Date().toLocaleDateString('fa-IR')} |
+| **نسخه** | 1.0 (تولید شده توسط هوش مصنوعی) |
+
+---
+
+> **نکته:** این سند با تحلیل ${chunks.length} قطعه اطلاعاتی تولید شده است. ارجاعات داخل متن به شما کمک می‌کند تا منبع اصلی هر ادعا را پیدا کنید.
+
+---
+
+`;
+
+    return metadataHeader + finalDocument;
 };

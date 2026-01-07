@@ -70,6 +70,7 @@ type WikiCategory = {
 
 const RichDocumentRenderer: React.FC<{ content: string }> = ({ content }) => {
     const renderInline = (text: string) => {
+        // Regex updated to capture the new citation format strictly [SourceID: ...]
         const parts = text.split(/(\*\*.*?\*\*|`.*?`|\[SourceID:.*?\]|\[.*?\])/g);
         return parts.map((part, index) => {
             if (part.startsWith('**') && part.endsWith('**')) {
@@ -78,9 +79,20 @@ const RichDocumentRenderer: React.FC<{ content: string }> = ({ content }) => {
             if (part.startsWith('`') && part.endsWith('`')) {
                 return <code key={index} className="bg-slate-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono border border-slate-200 mx-1">{part.slice(1, -1)}</code>;
             }
-            // Citation Highlighting
-            if ((part.startsWith('[SourceID:') || part.startsWith('[')) && part.endsWith(']') && !part.includes('](')) {
-                return <sup key={index} className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded ml-1 cursor-help font-mono" title={part}>{part.replace('SourceID:', 'Ref:')}</sup>;
+            // Enhanced Citation Highlighting
+            if (part.startsWith('[SourceID:') && part.endsWith(']')) {
+                const sourceName = part.replace('[SourceID:', '').replace(']', '').trim();
+                return (
+                    <span key={index} className="inline-flex items-center gap-1 mx-1 align-baseline group relative">
+                        <sup className="text-[9px] text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full cursor-help font-mono whitespace-nowrap transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                            {sourceName.length > 15 ? sourceName.slice(0, 12) + '...' : sourceName}
+                        </sup>
+                        {/* Tooltip for full name */}
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-800 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none">
+                            منبع: {sourceName}
+                        </span>
+                    </span>
+                );
             }
             return part;
         });
@@ -121,7 +133,7 @@ const RichDocumentRenderer: React.FC<{ content: string }> = ({ content }) => {
                         </div>
                     );
                 }
-                // Detect Metadata Table
+                // Detect Metadata Table (Starts with |)
                 if (trimBlock.startsWith('|')) {
                     const rows = trimBlock.split('\n').filter(r => r.trim().startsWith('|'));
                     if (rows.length < 2) return <p key={i}>{renderInline(trimBlock)}</p>;
