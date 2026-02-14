@@ -5,7 +5,8 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "build": "tsc",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node src/index.ts",
+    "migrate": "ts-node scripts/migrate.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

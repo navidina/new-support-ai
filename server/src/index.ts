@@ -10,7 +10,7 @@ import fineTuningRoutes from './routes/finetuning';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001; // Changed to 3001 to avoid conflict with frontend (3000)
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' })); // Increase limit for large chunks ingest

@@ -1,6 +1,6 @@
 import { KnowledgeChunk, Conversation, BenchmarkRun, FineTuningRecord } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 const getHeaders = () => {
     // Ideally retrieve userId/token from auth context or storage
