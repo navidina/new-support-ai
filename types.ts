@@ -13,6 +13,7 @@ export interface AppSettings {
   minConfidence: number;
   vectorWeight: number; // Added for Auto-Tuner persistence
   theme: 'light' | 'dark'; // Added Theme preference
+  userId: string; // Added for central tracking
 }
 
 export interface BaseDocument {
@@ -94,6 +95,7 @@ export interface Conversation extends BaseDocument {
     title: string;
     messages: Message[];
     lastUpdated: Date;
+    userId?: string; // Added for central storage
 }
 
 export interface DocumentStatus {

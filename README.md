@@ -1,119 +1,108 @@
+# Rayan Ham-Afza Intelligent Support Assistant (Enterprise RAG)
 
-# Rayan Ham-Afza Intelligent Support Assistant (Local RAG)
-
-A specialized, client-side Retrieval-Augmented Generation (RAG) application designed for financial software troubleshooting and documentation navigation. This application runs entirely within the browser (using IndexedDB for storage) while connecting to a local AI API (Ollama) for embeddings and generation.
+A specialized, centralized Retrieval-Augmented Generation (RAG) application designed for financial software troubleshooting and documentation navigation. This application uses a Client-Server architecture with a Node.js backend and PostgreSQL database to provide a unified knowledge base for all support staff.
 
 ## 🌟 Overview
 
-This project demonstrates a "Local-First" approach to Enterprise AI. It allows users to upload confidential financial documentation (Word, Text, Markdown), process it locally without uploading to a cloud server, and perform semantic searches or specialized troubleshooting queries.
+This project has been transitioned from a "Local-First" prototype to an "Enterprise-Ready" solution. It allows users to upload confidential financial documentation, which is processed and stored in a central server, enabling all support agents to access the same knowledge base and perform semantic searches.
 
 ### Key Capabilities
 
-1.  **Local ETL Pipeline**:
-    *   Parses `.docx` and text files in the browser.
-    *   Normalizes Persian text (character unification, noise removal).
-    *   **Smart Classification**: Automatically categorizes documents into 8 specific financial domains (e.g., Back Office, Online Trading, Funds) using keyword heuristics.
-    *   **Metadata Extraction**: Extracts Ticket IDs, Customer IDs, and Software Versions via Regex.
-2.  **Vector Database Simulation**:
-    *   Uses **IndexedDB** to store document chunks and their vector embeddings.
-    *   Implements a custom MongoDB-like query interface wrapper (`LocalDB`).
-3.  **Advanced Hybrid Search Engine**:
+1.  **Centralized Knowledge Base**:
+    *   **PostgreSQL + pgvector**: Stores document chunks and vector embeddings efficiently.
+    *   **Shared Access**: All users query the same database, ensuring consistency.
+2.  **Advanced Hybrid Search Engine (Server-Side)**:
     *   **Vector Search**: Uses Cosine Similarity for semantic matching.
-    *   **Keyword Boosting**: Heavily weights exact matches for IDs (Tickets, Error Codes).
-    *   **Navigation Heuristics**: Automatically detects when a user is looking for a feature's location (e.g., "Where is Report X?") and injects navigation keywords ("Menu", "Path") to find the answer.
-    *   **Query Expansion**: Uses a built-in synonym dictionary to broaden search terms.
-4.  **Interactive Knowledge Graph**:
-    *   **Recursive Tree Layout**: Visualizes document hierarchy without node overlap.
-    *   **Schema View**: Displays relationships between Systems, Errors, and Solutions.
-    *   **Force-Directed & Radial**: Alternative visualization modes.
-5.  **Deep Synthesis & Knowledge Wiki**:
-    *   **Smart Document Generation**: Reconstructs fragmented chunks into cohesive, readable topics using an LLM-driven batching strategy.
-    *   **Logic Panel**: Debug view to see exactly what the AI retrieved and how it processed the query.
+    *   **Keyword Boosting**: Uses PostgreSQL `ts_rank` for exact text matching.
+    *   **Query Expansion**: Automatically expands queries with Persian financial synonyms.
+3.  **Secure & Scalable**:
+    *   **Node.js Backend**: Handles authentication (basic user tracking) and search logic.
+    *   **Central LLM Connection**: Connects to a central Ollama/vLLM server for heavy lifting.
+4.  **Interactive Frontend**:
+    *   **React 19**: Modern UI for chatting and visualizing knowledge.
+    *   **Knowledge Graph**: Visualizes relationships between documents and concepts.
 
 ## 🛠 Tech Stack
 
-*   **Frontend**: React 19, TypeScript, Tailwind CSS
-*   **Icons**: Lucide React
-*   **Parsing**: `mammoth.js` (for Word documents)
-*   **AI Backend**: [Ollama](https://ollama.com/) (running locally)
-*   **Storage**: Native Browser IndexedDB
+*   **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
+*   **Backend**: Node.js, Express, TypeScript
+*   **Database**: PostgreSQL with `pgvector` extension
+*   **AI Engine**: Centralized Ollama (or compatible LLM)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-1.  **Node.js**: Version 18+ is recommended.
-2.  **Ollama**: You must have Ollama installed and running to provide the AI brains.
-    *   [Download Ollama](https://ollama.com/download)
-    *   Pull the required models:
-        ```bash
-        ollama pull aya:8b          # For Chat (Persian support)
-        ollama pull jeffh/intfloat-multilingual-e5-large-instruct:f32  # For Embeddings
-        ```
-    *   **Important**: Start Ollama with CORS enabled so the browser can talk to it:
-        *   **Mac/Linux**: `OLLAMA_ORIGINS="*" ollama serve`
-        *   **Windows**: Set environment variable `OLLAMA_ORIGINS="*"` and restart Ollama.
+1.  **Node.js**: Version 18+ is required.
+2.  **PostgreSQL**: Version 15+ with `pgvector` extension installed.
+    *   Install pgvector: `CREATE EXTENSION vector;`
+3.  **Ollama**: A central instance running the LLM models.
+    *   Models: `aya:8b` (Chat), `mxbai-embed-large` (Embeddings).
 
-### Installation
+### Installation & Setup
 
-1.  Clone the repository.
-2.  Install dependencies:
+1.  **Clone the repository**.
+2.  **Install dependencies**:
     ```bash
     npm install
+    cd server && npm install && cd ..
     ```
-3.  Start the development server:
+3.  **Configure Environment**:
+    *   Create `.env` in the root for Frontend:
+        ```env
+        VITE_API_URL=http://localhost:3000/api
+        VITE_OLLAMA_BASE_URL=http://your-ollama-server:11434/v1
+        ```
+    *   Create `server/.env` for Backend:
+        ```env
+        DATABASE_URL=postgresql://user:password@localhost:5432/rayan_rag
+        OLLAMA_BASE_URL=http://your-ollama-server:11434/v1
+        PORT=3000
+        ```
+4.  **Setup Database**:
+    *   Create a database named `rayan_rag`.
+    *   Run the schema script:
+        ```bash
+        psql -d rayan_rag -f server/src/schema.sql
+        ```
+
+### Migration (From Local Version)
+
+If you have data exported from the previous local version (JSON file):
+```bash
+# Run from root directory
+npx ts-node server/scripts/migrate.ts path/to/export.json
+```
+
+### Running the Application
+
+1.  **Start the Backend**:
     ```bash
-    npm start
+    npm run server
     ```
+    (Runs on port 3000 by default)
+
+2.  **Start the Frontend**:
+    ```bash
+    npm run dev
+    ```
+    (Runs on port 5173 by default)
 
 ## 📂 Project Structure
 
 ```
-src/
-├── components/          # React UI Components
-│   ├── KnowledgeGraph.tsx    # Canvas-based graph visualization
-│   ├── ChatBubble.tsx        # Message renderer with Logic Panel
-│   ├── HelpModal.tsx         # Comprehensive Documentation
+src/                 # Frontend (React)
+├── components/      # UI Components
+├── services/        # Frontend Services (API Clients)
+│   ├── database.ts  # Calls Backend API
+│   ├── search.ts    # Calls Backend Search API
 │   └── ...
-├── services/            # Core Logic (The "Backend" running in frontend)
-│   ├── search.ts           # Hybrid Search & Query Expansion Logic
-│   ├── graphEngine.ts      # Graph Layout Algorithms (Tree, Force, Schema)
-│   ├── synonymsData.ts     # Persian Synonym Dictionary
-│   ├── ollama.ts           # API client for Ollama
-│   ├── textProcessor.ts    # NLP, Cleaning, and Classification logic
-│   └── database.ts         # High-level DB operations
-├── types.ts             # TypeScript interfaces (Data Models)
-└── App.tsx              # Main entry point and state management
+server/              # Backend (Node.js)
+├── src/
+│   ├── routes/      # API Endpoints (Search, Knowledge, Chat)
+│   ├── services/    # Backend Logic (Ollama, etc.)
+│   ├── db.ts        # Database Connection
+│   └── schema.sql   # Database Schema
+├── scripts/         # Migration & Utility Scripts
+└── package.json
 ```
-
-## 📖 Developer Guide
-
-### The RAG Pipeline
-The pipeline is defined in `services/fileParser.ts` and `services/textProcessor.ts`.
-1.  **Ingestion**: Files are read as ArrayBuffers.
-2.  **Cleaning**: `cleanAndNormalizeText` unifies Arabic/Persian characters (ي/ک) and removes formatting noise.
-3.  **Classification**: `classifyDocument` assigns a category (e.g., 'back_office') based on weighted keyword matching.
-4.  **Chunking**: `smartChunking` splits text into semantic segments (default 2000 chars) with overlap.
-5.  **Embedding**: Chunks are sent to Ollama to get a 1024-dim vector.
-6.  **Storage**: Metadata + Text + Vector are saved to `chunks` store in IndexedDB.
-
-### The Search Algorithm (`services/search.ts`)
-1.  **Normalization**: Unifies characters and removes stop words.
-2.  **Expansion**:
-    *   **Dictionary**: Adds synonyms from `synonymsData.ts`.
-    *   **Heuristics**: If the query mentions a report name, adds "Menu", "Path", "Address" to the search tokens to prioritize finding its location.
-3.  **Hybrid Scoring**:
-    *   Calculates Vector Similarity (Semantic).
-    *   Calculates Keyword Match Score (Exact).
-    *   **Weighting**: If critical terms (IDs, specific error codes) exist, they carry 80% weight; otherwise, vectors carry the load.
-4.  **Reranking**: Results are sorted, and the top chunks are sent to the LLM as `CONTEXT`.
-
-### Deep Synthesis (Smart Docs)
-Defined in `services/ollama.ts` -> `generateSynthesizedDocument`.
-*   Uses a "Batching & Recursive Appending" strategy.
-*   Takes hundreds of scattered chunks, groups them into batches of 15.
-*   Feeds them sequentially to the LLM with a prompt to "continue writing the document".
-*   Produces a single, Markdown-formatted technical manual.
-
-## 🤝 Contributing
-Please ensure every new function has a JSDoc comment explaining its purpose, parameters, and return value. Run the benchmark suite before submitting changes to core search logic.
