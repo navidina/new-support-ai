@@ -65,10 +65,14 @@ router.post('/', async (req, res) => {
         const sql = `
             SELECT id, content, metadata,
                    1 - (embedding <=> $1) as vector_score,
-                   ts_rank(to_tsvector('simple', content), plainto_tsquery('simple', $2)) as keyword_score
+                   ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', $2)) as keyword_score
             FROM knowledge_chunks
             WHERE ($3::text IS NULL OR metadata->>'category' = $3)
-            ORDER BY ( (1 - (embedding <=> $1)) * $4 ) + ( ts_rank(to_tsvector('simple', content), plainto_tsquery('simple', $2)) * (1 - $4) ) DESC
+            ORDER BY (
+                (1 - (embedding <=> $1)) * $4
+            ) + (
+                (ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', $2)) / (1 + ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', $2)))) * (1 - $4)
+            ) DESC
             LIMIT 25;
         `;
 

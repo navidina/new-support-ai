@@ -21,3 +21,30 @@ CREATE TABLE IF NOT EXISTS conversations (
     messages JSONB,
     last_updated TIMESTAMP DEFAULT NOW()
 );
+
+-- Benchmark Runs table
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+    id TEXT PRIMARY KEY,
+    timestamp BIGINT,
+    total_cases INTEGER,
+    avg_score FLOAT,
+    avg_faithfulness FLOAT,
+    avg_relevance FLOAT,
+    pass_rate FLOAT,
+    avg_time FLOAT,
+    results JSONB,
+    config_used JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Fine-tuning Dataset table
+CREATE TABLE IF NOT EXISTS fine_tuning_dataset (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+    prompt TEXT NOT NULL,
+    response TEXT NOT NULL,
+    context TEXT,
+    score FLOAT,
+    source_ids JSONB,
+    model TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);

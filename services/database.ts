@@ -14,10 +14,6 @@ const getHeaders = () => {
 
 // --- CRUD Operations using Backend API ---
 
-/**
- * Saves a batch of knowledge chunks to the database.
- * @param {KnowledgeChunk[]} chunks - Array of chunks.
- */
 export const saveChunksToDB = async (chunks: KnowledgeChunk[]): Promise<void> => {
     try {
         const response = await fetch(`${API_URL}/knowledge/ingest`, {
@@ -32,11 +28,6 @@ export const saveChunksToDB = async (chunks: KnowledgeChunk[]): Promise<void> =>
     }
 };
 
-/**
- * Loads all knowledge chunks from the database.
- * WARNING: In server mode, loading ALL chunks is bad practice. Returns empty array.
- * @returns {Promise<KnowledgeChunk[]>}
- */
 export const loadChunksFromDB = async (): Promise<KnowledgeChunk[]> => {
     console.warn("loadChunksFromDB called in server mode. Returning empty array.");
     return [];
@@ -44,37 +35,20 @@ export const loadChunksFromDB = async (): Promise<KnowledgeChunk[]> => {
 
 // --- TICKET KNOWLEDGE BASE OPERATIONS (ISOLATED) ---
 
-/**
- * Saves ticket chunks to the isolated 'tickets' store.
- * Currently maps to general ingest or specific endpoint if implemented.
- */
 export const saveTicketsToDB = async (chunks: KnowledgeChunk[]): Promise<void> => {
-     // Reuse ingest for now, maybe add metadata flag?
-     // The prompt didn't specify separate ticket store for backend.
-     // We treat them as chunks.
      return saveChunksToDB(chunks);
 };
 
-/**
- * Loads tickets from the isolated store.
- */
 export const loadTicketsFromDB = async (): Promise<KnowledgeChunk[]> => {
     return [];
 };
 
-/**
- * Clears the isolated tickets store.
- */
 export const clearTicketsDB = async (): Promise<void> => {
     // Not supported or needs admin endpoint
 };
 
 // --------------------------------------------------
 
-/**
- * Saves or updates a conversation session.
- * @param {Conversation} conversation - The conversation object.
- */
 export const saveConversationToDB = async (conversation: Conversation): Promise<void> => {
     try {
         await fetch(`${API_URL}/conversations`, {
@@ -87,10 +61,6 @@ export const saveConversationToDB = async (conversation: Conversation): Promise<
     }
 };
 
-/**
- * Loads all conversation history, sorted by last updated.
- * @returns {Promise<Conversation[]>}
- */
 export const loadConversationsFromDB = async (): Promise<Conversation[]> => {
     try {
         const res = await fetch(`${API_URL}/conversations`, {
@@ -104,10 +74,6 @@ export const loadConversationsFromDB = async (): Promise<Conversation[]> => {
     }
 };
 
-/**
- * Deletes a specific conversation by ID.
- * @param {string} id - The conversation ID.
- */
 export const deleteConversationFromDB = async (id: string): Promise<void> => {
     try {
         await fetch(`${API_URL}/conversations/${id}`, {
@@ -119,32 +85,72 @@ export const deleteConversationFromDB = async (id: string): Promise<void> => {
     }
 };
 
-// --- Benchmark CRUD Operations (STUBBED for Client-Server) ---
+// --- Benchmark CRUD Operations ---
 
 export const saveBenchmarkRun = async (run: BenchmarkRun): Promise<void> => {
-    console.log("saveBenchmarkRun: Not implemented in server mode yet.");
+    try {
+        await fetch(`${API_URL}/benchmarks`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(run)
+        });
+    } catch (error) {
+        console.error("saveBenchmarkRun Error:", error);
+    }
 };
 
 export const loadBenchmarkHistory = async (): Promise<BenchmarkRun[]> => {
-    return [];
+    try {
+        const res = await fetch(`${API_URL}/benchmarks`, { headers: getHeaders() });
+        return res.ok ? res.json() : [];
+    } catch (error) {
+        console.error("loadBenchmarkHistory Error:", error);
+        return [];
+    }
 };
 
 export const deleteBenchmarkRun = async (id: string): Promise<void> => {
-    console.log("deleteBenchmarkRun: Not implemented in server mode yet.");
+    try {
+        await fetch(`${API_URL}/benchmarks/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+    } catch (error) {
+        console.error("deleteBenchmarkRun Error:", error);
+    }
 };
 
-// --- Fine-Tuning Dataset Operations (STUBBED) ---
+// --- Fine-Tuning Dataset Operations ---
 
 export const saveFineTuningRecord = async (record: FineTuningRecord): Promise<void> => {
-     console.log("saveFineTuningRecord: Not implemented in server mode yet.");
+    try {
+        await fetch(`${API_URL}/fine-tuning`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(record)
+        });
+    } catch (error) {
+        console.error("saveFineTuningRecord Error:", error);
+    }
 };
 
 export const exportFineTuningDataset = async (): Promise<string> => {
-    return "";
+    try {
+        const res = await fetch(`${API_URL}/fine-tuning/export`, { headers: getHeaders() });
+        return res.ok ? res.text() : "";
+    } catch (error) {
+        return "";
+    }
 };
 
 export const getFineTuningCount = async (): Promise<number> => {
-    return 0;
+    try {
+        const res = await fetch(`${API_URL}/fine-tuning/count`, { headers: getHeaders() });
+        const data = await res.json();
+        return data.count || 0;
+    } catch (error) {
+        return 0;
+    }
 };
 
 /**
@@ -154,30 +160,14 @@ export const clearDatabase = async (): Promise<void> => {
     console.warn("clearDatabase: Admin operation not available from client.");
 };
 
-/**
- * Exports the 'chunks' collection to a Blob directly to avoid large string allocation.
- * @returns {Promise<Blob>} JSON Blob of the database content.
- */
 export const exportDatabaseToBlob = async (): Promise<Blob> => {
-    // In server mode, this should probably call an export endpoint.
-    // For now, return empty blob.
     return new Blob([], { type: 'application/json' });
 };
 
-/**
- * Legacy export function (kept for compatibility if needed, but prefer exportDatabaseToBlob)
- * @deprecated Use exportDatabaseToBlob for better memory management.
- */
 export const exportDatabaseToJson = async (): Promise<string> => {
     return "[]";
 };
 
-/**
- * Imports chunks from a JSON string into the database.
- * Wipes existing chunks before import.
- * @param {string} jsonString - The JSON content to import.
- * @returns {Promise<KnowledgeChunk[]>} The imported chunks.
- */
 export const importDatabaseFromJson = async (jsonString: string): Promise<KnowledgeChunk[]> => {
     try {
         const parsed = JSON.parse(jsonString);

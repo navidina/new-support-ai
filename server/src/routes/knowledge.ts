@@ -1,38 +1,62 @@
 import { Router } from 'express';
-import { query } from '../db';
+import pool from '../db';
 
 const router = Router();
 
 router.post('/ingest', async (req, res) => {
+    const client = await pool.connect();
+
     try {
         const { chunks } = req.body;
 
-        if (!Array.isArray(chunks) || chunks.length === 0) {
+        if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
              return res.status(400).json({ error: "Invalid chunks data" });
         }
 
+        await client.query('BEGIN');
         console.log(`Ingesting ${chunks.length} chunks...`);
 
-        // Use a transaction or just loop inserts (for simplicity in this proof of concept)
-        // For better performance with large arrays, we should use pg-format or multiple values insert.
-        // But loop with Promise.all is okay for moderate size.
+        const BATCH_SIZE = 500;
 
-        const promises = chunks.map(chunk => {
-            const embeddingString = JSON.stringify(chunk.embedding);
-            const metadataString = JSON.stringify(chunk.metadata);
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
+            const values: any[] = [];
+            const placeholders: string[] = [];
 
-            return query(
-                `INSERT INTO knowledge_chunks (content, embedding, metadata) VALUES ($1, $2, $3)`,
-                [chunk.content, embeddingString, metadataString]
-            );
-        });
+            batch.forEach((chunk: any, batchIdx: number) => {
+                const offset = batchIdx * 4;
+                placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
 
-        await Promise.all(promises);
+                values.push(
+                    chunk.id,
+                    chunk.content,
+                    JSON.stringify(chunk.embedding),
+                    JSON.stringify(chunk.metadata)
+                );
+            });
 
+            const queryText = `
+                INSERT INTO knowledge_chunks (id, content, embedding, metadata)
+                VALUES ${placeholders.join(', ')}
+                ON CONFLICT (id)
+                DO UPDATE SET
+                    content = EXCLUDED.content,
+                    embedding = EXCLUDED.embedding,
+                    metadata = EXCLUDED.metadata,
+                    created_at = NOW()
+            `;
+
+            await client.query(queryText, values);
+        }
+
+        await client.query('COMMIT');
         res.json({ success: true, count: chunks.length });
     } catch (error: any) {
+        await client.query('ROLLBACK');
         console.error("Ingest Error:", error);
         res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
 });
 

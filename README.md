@@ -13,14 +13,14 @@ This project has been transitioned from a "Local-First" prototype to an "Enterpr
     *   **Shared Access**: All users query the same database, ensuring consistency.
 2.  **Advanced Hybrid Search Engine (Server-Side)**:
     *   **Vector Search**: Uses Cosine Similarity for semantic matching.
-    *   **Keyword Boosting**: Uses PostgreSQL `ts_rank` for exact text matching.
+    *   **Keyword Boosting**: Uses PostgreSQL `ts_rank` (normalized) for exact text matching.
     *   **Query Expansion**: Automatically expands queries with Persian financial synonyms.
-3.  **Secure & Scalable**:
+3.  **Optimization Tools**:
+    *   **Benchmarks**: Track system performance and accuracy over time.
+    *   **Fine-tuning Data Collection**: Gather user feedback and successful interactions for future model training.
+4.  **Secure & Scalable**:
     *   **Node.js Backend**: Handles authentication (basic user tracking) and search logic.
     *   **Central LLM Connection**: Connects to a central Ollama/vLLM server for heavy lifting.
-4.  **Interactive Frontend**:
-    *   **React 19**: Modern UI for chatting and visualizing knowledge.
-    *   **Knowledge Graph**: Visualizes relationships between documents and concepts.
 
 ## 🛠 Tech Stack
 
@@ -99,7 +99,7 @@ src/                 # Frontend (React)
 │   └── ...
 server/              # Backend (Node.js)
 ├── src/
-│   ├── routes/      # API Endpoints (Search, Knowledge, Chat)
+│   ├── routes/      # API Endpoints (Search, Knowledge, Chat, Benchmarks)
 │   ├── services/    # Backend Logic (Ollama, etc.)
 │   ├── db.ts        # Database Connection
 │   └── schema.sql   # Database Schema

@@ -219,7 +219,7 @@ export const parseTicketFile = async (file: File, onProgress: (step: string, inf
             content: cleanedText,
             searchContent: `تیکت ${ticketId} ${cleanedText}`,
             embedding: vector,
-            metadata: { category: 'troubleshooting', subCategory: 'general_ticket', tags: ['ticket', ticketId] },
+            metadata: { category: 'tickets' as DocCategory, subCategory: 'general_ticket', tags: ['ticket', ticketId] },
             source: { id: file.name, title: `تیکت ${ticketId}`, snippet: ticket.question.substring(0, 100), page: 1 }
         });
     }

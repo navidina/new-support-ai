@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import knowledgeRoutes from './routes/knowledge';
 import conversationRoutes from './routes/conversations';
 import searchRoutes from './routes/search';
+import benchmarkRoutes from './routes/benchmarks';
+import fineTuningRoutes from './routes/finetuning';
 
 dotenv.config();
 
@@ -16,6 +18,8 @@ app.use(express.json({ limit: '50mb' })); // Increase limit for large chunks ing
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/benchmarks', benchmarkRoutes);
+app.use('/api/fine-tuning', fineTuningRoutes);
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });

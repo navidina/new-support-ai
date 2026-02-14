@@ -22,7 +22,7 @@ export interface BaseDocument {
     updatedAt?: number;
 }
 
-export type DocCategory = 'back_office' | 'online_trading' | 'portfolio_management' | 'funds' | 'commodity_energy' | 'troubleshooting' | 'operational_process' | 'technical_infrastructure' | 'general';
+export type DocCategory = 'back_office' | 'online_trading' | 'portfolio_management' | 'funds' | 'commodity_energy' | 'troubleshooting' | 'operational_process' | 'technical_infrastructure' | 'general' | 'tickets';
 
 export interface ChunkMetadata {
     category: DocCategory;
