@@ -83,6 +83,8 @@ export const useRAGApplication = () => {
     // 2. Initialize DB
     useEffect(() => {
         if (isDbInitialized.current) return;
+        isDbInitialized.current = true; // Mark as initialized immediately to prevent double execution
+
         const initSystem = async () => {
             try {
                 // Load General Knowledge
@@ -100,9 +102,9 @@ export const useRAGApplication = () => {
                 await loadHistory();
                 await loadBenchmarkStats();
                 await updateFineTuningCount(); 
-                isDbInitialized.current = true;
             } catch (error) {
                 console.error("Failed to load DB", error);
+                // If the DB fails to load, we allow the app to continue so user can re-import or clear data
             } finally {
                 setIsDbLoading(false);
             }
@@ -202,6 +204,7 @@ export const useRAGApplication = () => {
                 .filter(m => !m.isThinking && m.id !== 'init-1')
                 .slice(-6);
 
+            // Fix: Provided 9 arguments to match the expected signature in services/search.ts and resolve argument count error.
             const response = await processQuery(
                 queryText, 
                 customChunks, 
@@ -220,7 +223,9 @@ export const useRAGApplication = () => {
                 categoryFilter,
                 1,
                 useWebSearch,
-                history // Pass history for rewriting
+                history,
+                undefined,
+                false
             );
 
             if (response.error === "OLLAMA_CONNECTION_REFUSED") {
@@ -242,6 +247,7 @@ export const useRAGApplication = () => {
                             ...msg,
                             content: response.text,
                             sources: response.sources,
+                            // Fix: response now guaranteed to have isAmbiguous and options from search.ts
                             options: response.isAmbiguous ? response.options : undefined, 
                             debugInfo: response.debugInfo,
                             isThinking: false,

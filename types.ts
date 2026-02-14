@@ -4,6 +4,7 @@ export interface AppSettings {
   chatModel: string;
   embeddingModel: string;
   rerankerModel: string; // New field for Reranker configuration
+  enableReranker: boolean; // Toggle for Reranker
   chunkSize: number;
   childChunkSize: number;
   chunkOverlap: number;
@@ -50,6 +51,8 @@ export interface KnowledgeChunk extends BaseDocument {
     metadata: ChunkMetadata;
     source: Source;
     score?: number; // Runtime score
+    rerankScore?: number; // Added for Hybrid Reranker
+    debug?: any; // Added for debug info
 }
 
 // --- RAG PIPELINE VISUALIZATION TYPES ---
@@ -192,6 +195,7 @@ export interface SearchOverrides {
     temperature?: number;
     vectorWeight?: number; // 0.0 to 1.0 (Vector vs Keyword balance)
     strategyName?: string;
+    enableReranker?: boolean;
 }
 
 export interface TuningStepResult {

@@ -15,31 +15,38 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
 
     // Timer logic
     useEffect(() => {
-        if (data.step !== 'idle' && data.step !== 'generating') {
+        // If final processing time is available, set it and stop timer logic
+        if (data.processingTime) {
+            setElapsed(data.processingTime);
+            return;
+        }
+
+        // If actively processing (not idle) and no final time yet, run timer
+        if (data.step !== 'idle') {
             const interval = setInterval(() => {
                 setElapsed(prev => prev + 100);
             }, 100);
             return () => clearInterval(interval);
-        } else if (data.processingTime) {
-            setElapsed(data.processingTime);
         }
     }, [data.step, data.processingTime]);
 
     const steps = [
         { id: 'analyzing', label: 'آنالیز معنایی', icon: Search, color: 'text-blue-400' },
         { id: 'vectorizing', label: 'بهینه‌سازی کوئری', icon: BrainCircuit, color: 'text-violet-400' },
-        { id: 'reranking', label: 'غربال دقیق (Rerank)', icon: Crosshair, color: 'text-rose-400' }, // New Step
+        { id: 'reranking', label: 'غربال دقیق (Rerank)', icon: Crosshair, color: 'text-rose-400' },
         { id: 'searching', label: 'انتخاب اسناد', icon: Database, color: 'text-amber-400' },
         { id: 'generating', label: 'تولید پاسخ نهایی', icon: Cpu, color: 'text-emerald-400' },
     ];
 
     const currentStepIndex = steps.findIndex(s => s.id === data.step);
-    // Handle skipping reranking if not present in data flow explicitly or if fast path taken
     const activeStep = steps[currentStepIndex] || steps[steps.length - 1];
-    const isProcessing = data.step !== 'generating' && data.step !== 'idle';
+    // If we have processingTime, it means the whole flow is effectively done
+    const isDone = !!data.processingTime; 
+    const isProcessing = !isDone && data.step !== 'idle';
 
     const getStatusText = () => {
-        if (data.step === 'generating') return 'پردازش با موفقیت انجام شد';
+        if (isDone) return 'پردازش با موفقیت انجام شد';
+        if (data.step === 'generating') return 'در حال نگارش پاسخ...';
         if (data.step === 'idle') return 'آماده';
         return activeStep.label + '...';
     };
@@ -83,16 +90,16 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                         <div className="absolute top-4 bottom-4 right-[15px] w-0.5 bg-surface-800 pointer-events-none"></div>
 
                         {steps.map((step, idx) => {
-                            const isDone = currentStepIndex > idx;
-                            const isCurrent = currentStepIndex === idx;
-                            const isPending = currentStepIndex < idx;
+                            const isStepDone = currentStepIndex > idx || isDone;
+                            const isCurrent = currentStepIndex === idx && !isDone;
+                            const isPending = currentStepIndex < idx && !isDone;
 
                             return (
                                 <div key={step.id} className={`relative flex gap-4 ${isPending ? 'opacity-30 grayscale' : 'opacity-100'} transition-all duration-500`}>
                                     {/* Icon Node */}
                                     <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shrink-0
                                         ${isCurrent ? `bg-surface-800 border-${step.color.split('-')[1]}-500 shadow-[0_0_10px_currentColor] ${step.color}` : ''}
-                                        ${isDone ? 'bg-surface-800 border-surface-600 text-surface-500' : ''}
+                                        ${isStepDone ? 'bg-surface-800 border-surface-600 text-surface-500' : ''}
                                         ${isPending ? 'bg-surface-900 border-surface-800 text-surface-700' : ''}
                                     `}>
                                         <step.icon className="w-4 h-4" />
@@ -105,7 +112,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                         </h4>
                                         
                                         {/* Step Details */}
-                                        {step.id === 'analyzing' && (isCurrent || isDone) && data.expandedQuery && (
+                                        {step.id === 'analyzing' && (isCurrent || isStepDone) && data.expandedQuery && (
                                             <div className="mt-2 p-2 rounded bg-brand-900/20 border border-brand-500/20 flex flex-col gap-1.5 animate-fade-in">
                                                 <div className="flex items-center gap-1.5 text-[9px] text-brand-300 font-bold uppercase tracking-wider">
                                                     <Zap className="w-3 h-3" />
@@ -117,7 +124,7 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                             </div>
                                         )}
 
-                                        {step.id === 'vectorizing' && (isCurrent || isDone) && data.extractedKeywords && (
+                                        {step.id === 'vectorizing' && (isCurrent || isStepDone) && data.extractedKeywords && (
                                             <div className="mt-2 flex flex-wrap gap-1.5 animate-fade-in">
                                                 {data.extractedKeywords.slice(0, 6).map((k, i) => (
                                                     <span key={i} className="px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-brand-300 text-[9px]">
@@ -127,19 +134,18 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                             </div>
                                         )}
                                         
-                                        {/* Reranking Step visualization */}
-                                        {step.id === 'reranking' && (isCurrent || isDone) && (
+                                        {step.id === 'reranking' && (isCurrent || isStepDone) && (
                                              <div className="mt-1 text-[9px] text-surface-400 animate-fade-in">
-                                                استفاده از مدل <span className="text-rose-400 font-mono">bge-reranker-v2-m3</span> برای مرتب‌سازی دقیق ۳۰ کاندیدا.
+                                                مرتب‌سازی ترکیبی (Hybrid Score) نتایج یافت شده.
                                              </div>
                                         )}
 
-                                        {step.id === 'searching' && (isCurrent || isDone) && data.retrievedCandidates && (
+                                        {step.id === 'searching' && (isCurrent || isStepDone) && data.retrievedCandidates && (
                                             <div className="mt-2 space-y-2 animate-fade-in w-full">
                                                 {/* Accepted Candidates */}
                                                 <div className="space-y-1">
                                                      <div className="text-[10px] font-bold text-emerald-400 mb-1 flex justify-between">
-                                                        <span>نتایج منطبق (Top 8)</span>
+                                                        <span>نتایج منطبق (Top 6)</span>
                                                         <span className="opacity-50 text-[9px]">High Precision</span>
                                                      </div>
                                                      {data.retrievedCandidates.filter(c => c.accepted).slice(0, 4).map((doc, i) => (
@@ -152,22 +158,6 @@ const RAGVisualization: React.FC<RAGVisualizationProps> = ({ data }) => {
                                                         <div className="text-[9px] text-surface-500 italic px-1">هیچ نتیجه با کیفیتی یافت نشد.</div>
                                                     )}
                                                 </div>
-
-                                                {/* Rejected Candidates */}
-                                                {data.retrievedCandidates.filter(c => !c.accepted).length > 0 && (
-                                                    <div className="space-y-1 pt-2 border-t border-white/5">
-                                                        <div className="text-[10px] font-bold text-rose-400 mb-1 flex justify-between">
-                                                            <span>رد شده (امتیاز پایین)</span>
-                                                            <span className="opacity-50 text-[9px]">Cross-Encoder Rejected</span> 
-                                                        </div>
-                                                        {data.retrievedCandidates.filter(c => !c.accepted).slice(0, 3).map((doc, i) => (
-                                                            <div key={i} className="flex items-center justify-between text-[9px] text-surface-500 bg-surface-800/30 p-1.5 rounded border border-white/5 opacity-70 hover:opacity-100 transition-opacity">
-                                                                <span className="truncate max-w-[150px] line-through decoration-surface-600" title={doc.title}>{doc.title}</span>
-                                                                <span className="text-rose-900/70 font-mono">{toPersianDigits((doc.score * 100).toFixed(0))}%</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
                                     </div>

@@ -4,9 +4,7 @@ import { User, BookOpen, Activity, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown,
 import { Message } from '../types';
 import { toPersianDigits } from '../services/textProcessor';
 import RAGVisualization from './RAGVisualization';
-
-// Declare mermaid global
-declare var mermaid: any;
+import MermaidRenderer from './MermaidRenderer';
 
 interface ChatBubbleProps {
   message: Message;
@@ -27,20 +25,6 @@ const categoryLabels: Record<string, string> = {
 };
 
 const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ content, isUser }) => {
-    const mermaidRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!isUser && mermaidRef.current) {
-            try {
-                if (typeof mermaid !== 'undefined') {
-                    mermaid.init(undefined, mermaidRef.current.querySelectorAll('.mermaid'));
-                }
-            } catch (err) {
-                console.error('Mermaid render error:', err);
-            }
-        }
-    }, [content, isUser]);
-
     const renderInline = (text: string) => {
         const parts = text.split(/(\*\*.*?\*\*)/g);
         return parts.map((part, index) => {
@@ -57,14 +41,10 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
     if (content.includes('```mermaid')) {
         const parts = content.split(/```mermaid([\s\S]*?)```/g);
         return (
-            <div className={`space-y-3 text-[0.93rem] leading-7 markdown-content ${isUser ? 'text-white' : 'text-slate-700 dark:text-surface-200'}`} ref={mermaidRef}>
+            <div className={`space-y-3 text-[0.93rem] leading-7 markdown-content ${isUser ? 'text-white' : 'text-slate-700 dark:text-surface-200'}`}>
                 {parts.map((part, i) => {
-                    if (i % 2 === 1) { // Mermaid block
-                        return (
-                            <div key={i} className="mermaid bg-slate-50 dark:bg-surface-900 p-4 rounded-xl border border-slate-200 dark:border-surface-700 overflow-x-auto my-2 shadow-inner" dir="ltr">
-                                {part.trim()}
-                            </div>
-                        );
+                    if (i % 2 === 1) { // Mermaid code block
+                        return <MermaidRenderer key={i} code={part.trim()} />;
                     }
                     return <MarkdownRenderer key={i} content={part} isUser={isUser} />; 
                 })}
@@ -73,7 +53,7 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
     }
 
     const blocks = content.split(/\n\n+/);
-    let orderedListCount = 0; // Track numbered list continuity across blocks
+    let orderedListCount = 0;
 
     return (
         <div className={`space-y-3 text-[0.93rem] leading-8 tracking-wide markdown-content ${isUser ? 'text-white' : 'text-slate-700 dark:text-surface-200'}`}>
@@ -82,7 +62,7 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
                 if (!trimmed) return null;
 
                 if (trimmed.startsWith('|')) {
-                    orderedListCount = 0; // Reset list counter
+                    orderedListCount = 0;
                     const rows = trimmed.split('\n').filter(r => r.trim().startsWith('|'));
                     if (rows.length > 1) {
                         return (
@@ -108,9 +88,8 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
                     }
                 }
 
-                // Check for Unordered List (Bullets)
                 if (trimmed.match(/^[-*]\s/) && !trimmed.match(/^\d+\./)) {
-                    orderedListCount = 0; // Reset ordered list counter on unordered list
+                    orderedListCount = 0;
                     const items = trimmed.split('\n');
                     return (
                         <ul key={i} className={`list-disc list-outside pr-5 space-y-1 ${isUser ? 'marker:text-white/70' : 'marker:text-brand-500 dark:marker:text-brand-400'}`}>
@@ -121,13 +100,10 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
                     );
                 }
 
-                // Check for Ordered List (Numbered)
                 const orderedListMatch = trimmed.match(/^(\d+)\.\s/);
                 if (orderedListMatch) {
                     const lines = trimmed.split('\n');
                     const explicitStart = parseInt(orderedListMatch[1], 10);
-                    
-                    // Group lines into Parent Items and Sub Items (Bullets)
                     const groupedItems: { text: string; subItems: string[] }[] = [];
                     
                     lines.forEach(line => {
@@ -135,34 +111,22 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
                         const bulletMatch = line.match(/^[-*]\s/);
                         
                         if (numMatch) {
-                            // Start new numbered item
-                            groupedItems.push({ 
-                                text: line.replace(/^\d+\.\s/, ''), 
-                                subItems: [] 
-                            });
+                            groupedItems.push({ text: line.replace(/^\d+\.\s/, ''), subItems: [] });
                         } else if (bulletMatch) {
-                            // Add as sub-item to the last numbered item
                             if (groupedItems.length > 0) {
                                 groupedItems[groupedItems.length - 1].subItems.push(line.replace(/^[-*]\s/, ''));
                             } else {
-                                // Fallback: if bullet appears before any number in this block (rare)
                                 groupedItems.push({ text: line, subItems: [] });
                             }
                         } else {
-                            // Continuation text
                             if (groupedItems.length > 0) {
                                 groupedItems[groupedItems.length - 1].text += ' ' + line.trim();
                             }
                         }
                     });
 
-                    // Intelligent Continuity Logic
                     let startNum = explicitStart;
-                    if (orderedListCount > 0) {
-                        startNum = orderedListCount + 1;
-                    }
-
-                    // Update the counter based on number of MAIN items only
+                    if (orderedListCount > 0) startNum = orderedListCount + 1;
                     orderedListCount = startNum + groupedItems.length - 1;
 
                     return (
@@ -183,10 +147,7 @@ const MarkdownRenderer: React.FC<{ content: string, isUser: boolean }> = ({ cont
                     );
                 }
 
-                // If not a list, reset counter
-                if (!trimmed.startsWith('##')) {
-                    orderedListCount = 0;
-                }
+                if (!trimmed.startsWith('##')) orderedListCount = 0;
 
                 if (trimmed.startsWith('## ')) {
                     orderedListCount = 0;
@@ -206,59 +167,78 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onOptionSelect, onFeed
   const [displayedContent, setDisplayedContent] = useState(() => {
       if (isUser) return message.content;
       if (message.isThinking) return '';
-      return message.content;
+      return ''; // Start empty for typing effect on mount
   });
   
   const [isTyping, setIsTyping] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const typeInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-      if (isUser || message.isThinking) {
+      // Clean up previous interval
+      if (typeInterval.current) {
+          clearInterval(typeInterval.current);
+          typeInterval.current = null;
+      }
+
+      if (isUser) {
           setDisplayedContent(message.content);
           setIsTyping(false);
           return;
       }
 
-      if (displayedContent === message.content) {
+      if (message.isThinking) {
+          setDisplayedContent('');
           setIsTyping(false);
           return;
       }
 
+      // If we are here, it's an AI message that is not thinking.
       setIsTyping(true);
       setDisplayedContent(''); 
       
       let currentIndex = 0;
-      const fullText = message.content;
-      const step = fullText.length > 500 ? 5 : 2; 
-      const delay = fullText.length > 500 ? 5 : 12;
+      const fullText = message.content || '';
+      const step = fullText.length > 500 ? 10 : 3; 
+      const delay = fullText.length > 500 ? 5 : 15;
 
-      const interval = setInterval(() => {
-          if (currentIndex < fullText.length) {
-              currentIndex += step;
-              const nextChunk = fullText.substring(0, Math.min(currentIndex, fullText.length));
-              setDisplayedContent(nextChunk);
-          } else {
-              clearInterval(interval);
-              setIsTyping(false);
-              setDisplayedContent(fullText); 
-          }
+      const intervalId = setInterval(() => {
+          setDisplayedContent((prev) => {
+             // Calculate based on index instead of prev to avoid potential sync issues
+             // However, to keep it simple and performant:
+             let nextIndex = currentIndex + step;
+             if (nextIndex >= fullText.length) {
+                 nextIndex = fullText.length;
+             }
+             currentIndex = nextIndex;
+             
+             if (currentIndex >= fullText.length) {
+                  clearInterval(intervalId);
+                  setIsTyping(false);
+                  return fullText;
+             }
+             return fullText.substring(0, currentIndex);
+          });
       }, delay);
 
-      return () => clearInterval(interval);
+      typeInterval.current = intervalId;
+
+      return () => {
+          if (typeInterval.current) clearInterval(typeInterval.current);
+      };
+      // CRITICAL FIX: displayedContent removed from dependencies to prevent infinite reset loop
   }, [message.content, message.isThinking, isUser]);
 
   return (
     <div className={`flex w-full mb-8 ${isUser ? 'justify-end' : 'justify-start'} animate-slide-up-fade group`}>
       <div className={`flex max-w-[90%] md:max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'} gap-4`}>
         
-        {/* Avatar */}
         {!isUser && (
             <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/80 dark:bg-surface-800/80 border border-slate-200 dark:border-white/10 shadow-lg shadow-brand-500/10 mt-1">
                 <Sparkles className="w-5 h-5 text-brand-600 dark:text-brand-400" />
             </div>
         )}
 
-        {/* Content Box */}
         <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} w-full min-w-0`}>
           
           <div ref={contentRef} className={`px-6 py-5 relative w-full transition-all duration-300 shadow-xl backdrop-blur-md ${
@@ -267,12 +247,10 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onOptionSelect, onFeed
               : 'bg-white/90 dark:bg-surface-900/60 text-slate-800 dark:text-surface-100 rounded-[1.5rem] rounded-tl-none border border-slate-100 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10'
           }`}>
             
-            {/* 1. RAG Visualization */}
             {!isUser && message.pipelineData && (
                 <RAGVisualization data={message.pipelineData} />
             )}
 
-            {/* 2. Text Content or Thinking State */}
             {message.isThinking ? (
                <div className="flex items-center gap-3 text-slate-500 dark:text-surface-400 py-2">
                  <div className="flex gap-1.5">
@@ -290,7 +268,6 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onOptionSelect, onFeed
                      <span className="inline-block w-1.5 h-4 bg-brand-500 dark:bg-brand-400 ml-1 align-middle animate-pulse shadow-[0_0_8px_#818cf8]"></span>
                  )}
                  
-                 {/* Logic / Debug Panel */}
                  {!isUser && !isTyping && showDebug && message.debugInfo && (
                      <div className="mt-5 p-4 bg-slate-100 dark:bg-black/40 rounded-xl border border-slate-200 dark:border-white/5 text-xs font-mono text-slate-600 dark:text-surface-400 animate-slide-in-from-top-2" dir="ltr">
                         <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-3">
@@ -357,7 +334,6 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onOptionSelect, onFeed
             )}
           </div>
 
-          {/* Options */}
           {!isUser && !isTyping && message.options && message.options.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2 w-full animate-slide-up-fade pl-2" style={{ animationDelay: '0.1s' }}>
                   {message.options.map((opt, i) => (
@@ -379,7 +355,6 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, onOptionSelect, onFeed
               </div>
           )}
 
-          {/* Sources */}
           {!showDebug && !isUser && !isTyping && !message.isThinking && message.sources && message.sources.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2 animate-fade-in pl-2">
                 {message.sources.slice(0, 3).map((source, idx) => (

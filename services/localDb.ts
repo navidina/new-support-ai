@@ -210,6 +210,7 @@ export class Collection<T extends BaseDocument> {
 export class LocalDB {
     private db: IDBDatabase | null = null;
     private config: DBConfig;
+    private connectionPromise: Promise<void> | null = null;
 
     /**
      * Creates an instance of LocalDB.
@@ -222,19 +223,37 @@ export class LocalDB {
     /**
      * Opens the IndexedDB connection.
      * Handles version upgrades and object store creation automatically based on config.
+     * Implements singleton pattern to prevent race conditions.
      * 
      * @returns {Promise<void>} Resolves when connection is established.
      */
     async connect(): Promise<void> {
+        // If already connected, do nothing
         if (this.db) return;
+        
+        // If a connection attempt is already in progress, return that promise
+        if (this.connectionPromise) return this.connectionPromise;
 
-        return new Promise((resolve, reject) => {
+        this.connectionPromise = new Promise((resolve, reject) => {
             const request = indexedDB.open(this.config.dbName, this.config.version);
 
-            request.onerror = () => reject(request.error);
+            request.onerror = () => {
+                console.error("IndexedDB Connection Failed:", request.error);
+                this.connectionPromise = null; // Reset on failure so we can retry
+                reject(request.error);
+            };
             
             request.onsuccess = () => {
                 this.db = request.result;
+                
+                // Handle version changes (e.g., another tab upgrades the DB)
+                this.db.onversionchange = () => {
+                    this.db?.close();
+                    this.db = null;
+                    this.connectionPromise = null;
+                    console.warn("Database version changed. Connection closed.");
+                };
+
                 resolve();
             };
 
@@ -247,6 +266,8 @@ export class LocalDB {
                 });
             };
         });
+
+        return this.connectionPromise;
     }
 
     /**

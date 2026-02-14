@@ -9,13 +9,20 @@ import { getSettings } from './settings';
 declare var mammoth: any;
 
 /**
- * Parses a Ticket Export CSV (based on Excel Image).
- * Structure: TicketNum | Title | Body | CreateDate ...
+ * Helper to check if a string is a GUID or System ID.
  */
-export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
-    const text = await file.text();
+const isSystemId = (text: string): boolean => {
+    if (!text) return false;
+    const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const shortHexRegex = /^[0-9a-f]{12,64}$/i; 
+    return guidRegex.test(text.trim()) || shortHexRegex.test(text.trim());
+};
+
+/**
+ * Generic CSV Parser that handles quotes and newlines within cells.
+ */
+const parseCSVGeneric = (text: string): string[][] => {
     const rows: string[][] = [];
-    
     let inQuote = false;
     let currentCell = '';
     let currentRow: string[] = [];
@@ -36,8 +43,12 @@ export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
             currentCell = '';
         } else if ((char === '\r' || char === '\n') && !inQuote) {
             if (char === '\r' && nextChar === '\n') i++;
-            currentRow.push(currentCell);
-            rows.push(currentRow);
+            // If row is empty and it's just a newline, skip pushing if we want strictness, 
+            // but usually we push to finish the row.
+            if (currentRow.length > 0 || currentCell.length > 0) {
+                currentRow.push(currentCell);
+                rows.push(currentRow);
+            }
             currentRow = [];
             currentCell = '';
         } else {
@@ -48,33 +59,91 @@ export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
         currentRow.push(currentCell);
         rows.push(currentRow);
     }
+    return rows;
+};
 
-    if (rows.length < 2) throw new Error("File appears empty or invalid");
+/**
+ * Parses a Custom Benchmark CSV with specific headers:
+ * "عنوان سوال (چالش)" and "پاسخ کامل و صحیح (مرجع)"
+ */
+export const parseBenchmarkCSV = async (file: File): Promise<BenchmarkCase[]> => {
+    const text = await file.text();
+    const rows = parseCSVGeneric(text);
 
-    const headers = rows[0].map(h => h.trim().toLowerCase());
-    const ticketIdx = headers.findIndex(h => h.includes('ticketnum'));
-    const bodyIdx = headers.findIndex(h => h.includes('body'));
-    const titleIdx = headers.findIndex(h => h.includes('title'));
+    if (rows.length < 2) throw new Error("فایل خالی یا نامعتبر است");
+
+    const headers = rows[0].map(h => h.trim());
     
-    if (ticketIdx === -1 || bodyIdx === -1) {
-        throw new Error("CSV must contain 'TicketNum' and 'Body' columns.");
+    // Flexible matching for headers
+    const questionIdx = headers.findIndex(h => h.includes('عنوان سوال') || h.includes('Question') || h.includes('چالش'));
+    const answerIdx = headers.findIndex(h => h.includes('پاسخ کامل') || h.includes('Ground Truth') || h.includes('مرجع'));
+
+    if (questionIdx === -1 || answerIdx === -1) {
+        throw new Error("ستون‌های الزامی یافت نشد. لطفاً از هدرهای «عنوان سوال (چالش)» و «پاسخ کامل و صحیح (مرجع)» استفاده کنید.");
     }
 
-    const ticketGroups = new Map<string, { body: string, title: string }[]>();
+    const cases: BenchmarkCase[] = [];
 
     for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
-        if (row.length <= ticketIdx) continue;
+        // Skip if row doesn't have enough columns
+        if (row.length <= Math.max(questionIdx, answerIdx)) continue;
 
+        const question = stripHtml(row[questionIdx] || "").trim();
+        const groundTruth = stripHtml(row[answerIdx] || "").trim();
+
+        if (question.length < 2) continue;
+
+        cases.push({
+            id: `custom-${i}`,
+            category: 'تست سفارشی (CSV)',
+            question: question,
+            groundTruth: groundTruth || "پاسخی درج نشده است"
+        });
+    }
+
+    return cases;
+};
+
+/**
+ * Parses a Ticket Export CSV with specific logic for Rayan Support Exports.
+ * - Groups rows by TicketNumber.
+ * - Takes the bottom-most (last occurring) row as the original User Question.
+ */
+export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
+    const text = await file.text();
+    const rows = parseCSVGeneric(text);
+
+    if (rows.length < 2) throw new Error("فایل خالی یا نامعتبر است");
+
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const getIdx = (candidates: string[]) => {
+        for (const c of candidates) {
+            const idx = headers.indexOf(c);
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const ticketIdx = getIdx(['ticketnumber', 'ticketnum', 'id', 'شماره تیکت']);
+    const bodyIdx = getIdx(['body', 'description', 'text', 'متن']);
+    const titleIdx = getIdx(['title', 'subject', 'عنوان']);
+    
+    if (ticketIdx === -1 || bodyIdx === -1) {
+        throw new Error("ستون‌های TicketNumber یا Body یافت نشد.");
+    }
+
+    const ticketGroups = new Map<string, any[]>();
+
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
         const ticketNum = row[ticketIdx]?.trim();
-        let body = row[bodyIdx] || "";
-        const title = titleIdx !== -1 ? row[titleIdx] || "" : "";
-
         if (!ticketNum) continue;
 
-        body = stripHtml(body);
-        
-        if (!body || body.length < 5) continue;
+        const body = stripHtml(row[bodyIdx] || "").trim();
+        const title = titleIdx !== -1 ? stripHtml(row[titleIdx] || "").trim() : "";
+
+        if (!body || body.length < 2 || isSystemId(body)) continue;
 
         if (!ticketGroups.has(ticketNum)) {
             ticketGroups.set(ticketNum, []);
@@ -83,23 +152,26 @@ export const parseTicketCSV = async (file: File): Promise<BenchmarkCase[]> => {
     }
 
     const cases: BenchmarkCase[] = [];
-
-    ticketGroups.forEach((entries, ticketNum) => {
-        if (entries.length < 2) return; 
+    ticketGroups.forEach((groupRows, ticketNum) => {
+        // PER REQUIREMENT: Bottom-most row is the original user question
+        const questionRow = groupRows[groupRows.length - 1];
         
-        const questionObj = entries[0];
-        const answerObj = entries[entries.length - 1];
+        // Rows above it are historical support replies (Ground Truth)
+        const supportResponses = groupRows.slice(0, groupRows.length - 1)
+            .map(r => r.body)
+            .filter(b => b.length > 5)
+            .join("\n---\n");
 
-        // Ensure title is present in the first object if available
-        const mainTitle = questionObj.title || entries.find(e => e.title)?.title || "";
-
-        if (questionObj.body === answerObj.body) return;
+        let finalQuestion = questionRow.body;
+        if (questionRow.title && questionRow.title !== questionRow.body) {
+            finalQuestion = `موضوع: ${questionRow.title}\nشرح تیکت: ${questionRow.body}`;
+        }
 
         cases.push({
             id: `ticket-${ticketNum}`,
-            category: 'Ticket Analysis',
-            question: `${mainTitle ? `عنوان: ${mainTitle}\n` : ''}متن تیکت: ${questionObj.body}`,
-            groundTruth: answerObj.body
+            category: 'تحلیل تیکت پشتیبانی',
+            question: finalQuestion,
+            groundTruth: supportResponses || "پاسخ تاریخی یافت نشد"
         });
     });
 
@@ -110,284 +182,96 @@ export const parseBenchmarkDocx = async (file: File): Promise<BenchmarkCase[]> =
     if (typeof mammoth === 'undefined') {
         throw new Error("Mammoth library not loaded");
     }
-
     const arrayBuffer = await file.arrayBuffer();
     const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
     const htmlContent = result.value;
-
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, 'text/html');
     const rows = Array.from(doc.querySelectorAll('tr'));
-
     const cases: BenchmarkCase[] = [];
-
     for (let i = 0; i < rows.length; i++) {
         const cells = rows[i].querySelectorAll('td');
         if (cells.length < 2) continue;
-
-        const rawQuestion = cells[0].textContent || "";
-        const rawAnswer = cells[1].textContent || "";
-        const rawCategory = cells[2]?.textContent || "General";
-
-        const question = cleanAndNormalizeText(rawQuestion);
-        const answer = cleanAndNormalizeText(rawAnswer);
-
-        if (question.length < 5 || question.includes("سوال") || question.includes("Question")) {
-            continue;
-        }
-
+        const question = cleanAndNormalizeText(cells[0].textContent || "");
+        const answer = cleanAndNormalizeText(cells[1].textContent || "");
+        if (question.length < 5) continue;
         cases.push({
             id: Date.now() + i, 
             question: question,
             groundTruth: answer,
-            category: cleanAndNormalizeText(rawCategory) || 'Custom'
+            category: 'Custom'
         });
     }
-
     return cases;
 };
 
-/**
- * Public Helper to process CSV rows directly into KnowledgeChunks.
- * Can be used by both general file import (auto-detect) and specific ticket import.
- */
-export const parseTicketFile = async (
-    file: File, 
-    onProgress: (step: string, info?: any) => void
-): Promise<KnowledgeChunk[]> => {
-    // Using the robust logic from parseTicketCSV to get clean data
-    let ticketCases: BenchmarkCase[] = [];
-    try {
-        ticketCases = await parseTicketCSV(file);
-    } catch (e) {
-        throw new Error("CSV structure invalid. Needs TicketNum and Body.");
-    }
-
+export const parseTicketFile = async (file: File, onProgress: (step: string, info?: any) => void): Promise<KnowledgeChunk[]> => {
+    const ticketCases = await parseTicketCSV(file);
     const chunks: KnowledgeChunk[] = [];
-    const total = ticketCases.length;
-
-    for (let i = 0; i < total; i++) {
+    for (let i = 0; i < ticketCases.length; i++) {
         const ticket = ticketCases[i];
-        
-        // Extract ID from "ticket-12345"
         const ticketId = String(ticket.id).replace('ticket-', '');
-        
-        // Combine Question (User Issue) and Answer (Support Reply) for the chunk content
-        // We ensure the "Title" part from question is clearly visible at the top for graph weighting
-        // Note: ticket.question already includes "عنوان: ..." if parseTicketCSV found it.
-        const content = `شماره تیکت: ${ticketId}\n${ticket.question}\n\nپاسخ کارشناس:\n${ticket.groundTruth}`;
-        
-        const cleanedText = cleanAndNormalizeText(content);
-        // Simple classification for Tickets
-        const category = 'troubleshooting';
-        const subCategory = 'general_ticket';
-
-        const metadata = extractMetadata(cleanedText, `ticket-${ticketId}.csv`, category, subCategory);
-        metadata.ticketId = ticketId;
-
-        if (i % 20 === 0) onProgress('embedding', `Processing Ticket ${i+1}/${total}`);
-
-        let vector: number[] = [];
-        try {
-            // Use lighter embeddings or skip if latency is high, but here we keep quality
-            vector = await getEmbedding(cleanedText, false);
-        } catch (e) {
-            console.warn(`Failed to embed ticket ${ticketId}`);
-            vector = new Array(1024).fill(0);
-        }
-
+        const cleanedText = cleanAndNormalizeText(`تیکت ${ticketId}:\n${ticket.question}`);
+        if (i % 20 === 0) onProgress('embedding', `درحال پردازش تیکت ${i+1} از ${ticketCases.length}`);
+        let vector = await getEmbedding(cleanedText, false);
         chunks.push({
             id: `ticket-chunk-${ticketId}-${Date.now()}`,
             content: cleanedText,
-            searchContent: `Ticket ${ticketId} ${category} ${subCategory} \n ${cleanedText}`,
+            searchContent: `تیکت ${ticketId} ${cleanedText}`,
             embedding: vector,
-            metadata: metadata,
-            source: {
-                id: file.name,
-                title: `تیکت ${ticketId}`,
-                snippet: ticket.question.substring(0, 100) + "...",
-                page: 1,
-                metadata: metadata
-            }
+            metadata: { category: 'troubleshooting', subCategory: 'general_ticket', tags: ['ticket', ticketId] },
+            source: { id: file.name, title: `تیکت ${ticketId}`, snippet: ticket.question.substring(0, 100), page: 1 }
         });
     }
-
     return chunks;
 };
 
-/**
- * Parses and processes a list of files into vector embeddings.
- */
-export const parseFiles = async (
-  fileList: FileList, 
-  onProgress?: (fileName: string, step: 'reading' | 'embedding' | 'complete' | 'error', info?: any) => void,
-  signal?: AbortSignal
-): Promise<KnowledgeChunk[]> => {
+export const parseFiles = async (fileList: FileList, onProgress?: (fileName: string, step: 'reading' | 'embedding' | 'complete' | 'error', info?: any) => void, signal?: AbortSignal): Promise<KnowledgeChunk[]> => {
   const settings = getSettings();
   const chunks: KnowledgeChunk[] = [];
   const files = Array.from(fileList);
-
   for (const file of files) {
     if (signal?.aborted) throw new Error("ABORTED");
-
     try {
       if (onProgress) onProgress(file.name, 'reading', 'Initializing stream...');
-      
-      // SPECIAL HANDLING FOR TICKET CSV
-      // If user uploads a CSV here, we assume they might want to index it generally.
-      // But for the specific "Ticket Analysis" feature, use `parseTicketFile` directly in the component.
+      let rawText = '';
       if (file.name.toLowerCase().endsWith('.csv')) {
-          try {
-              const ticketChunks = await parseTicketFile(file, (step, info) => {
-                  if (onProgress) onProgress(file.name, step as any, info);
-              });
-              
-              if (ticketChunks.length > 0) {
-                  chunks.push(...ticketChunks);
-                  if (onProgress) onProgress(file.name, 'complete', { 
-                      count: ticketChunks.length, 
-                      category: 'troubleshooting', 
-                      subCategory: 'csv_import' 
-                  });
-                  await saveChunksToDB(ticketChunks); // Save to GENERAL DB
-                  continue; // Skip normal processing
-              }
-          } catch (e) {
-              console.warn("CSV was not a valid Ticket export, falling back to text parsing.", e);
-              // Fallthrough to normal parsing
+          const ticketChunks = await parseTicketFile(file, (step, info) => { if (onProgress) onProgress(file.name, step as any, info); });
+          if (ticketChunks.length > 0) {
+              chunks.push(...ticketChunks);
+              if (onProgress) onProgress(file.name, 'complete', { count: ticketChunks.length, category: 'troubleshooting' });
+              await saveChunksToDB(ticketChunks);
+              continue;
           }
       }
-
-      let rawText = '';
-      const fileName = file.name;
-
-      if (fileName.toLowerCase().endsWith('.docx')) {
-        if (typeof mammoth !== 'undefined') {
-          const arrayBuffer = await file.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-          rawText = htmlToMarkdown(result.value);
-        } else {
-          throw new Error("Mammoth library missing for docx");
-        }
-      } else if (file.type.startsWith('text/') || fileName.match(/\.(md|txt|json|csv|log)$/i)) {
+      if (file.name.toLowerCase().endsWith('.docx')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+        rawText = htmlToMarkdown(result.value);
+      } else if (file.type.startsWith('text/') || file.name.match(/\.(md|txt|json|csv|log)$/i)) {
         rawText = await file.text();
-      } else {
-        continue;
-      }
-
-      if (!rawText) {
-          if (onProgress) onProgress(file.name, 'complete', { count: 0 });
-          continue;
-      }
-
-      if (signal?.aborted) throw new Error("ABORTED");
-
-      if (onProgress) onProgress(file.name, 'reading', 'Clean & Normalize Text...');
+      } else continue;
       const cleanedText = cleanAndNormalizeText(rawText);
-      
-      const initialClass = classifyDocument(cleanedText, fileName);
-      
-      if (onProgress) onProgress(file.name, 'reading', `Classified: ${initialClass.category}/${initialClass.subCategory}`);
-
-      const fileMetadata = extractMetadata(cleanedText, fileName, initialClass.category, initialClass.subCategory);
-      
-      let parentChunks: string[] = [];
-      if (fileName.toLowerCase().endsWith('.md') || fileName.toLowerCase().endsWith('.docx')) {
-          if (onProgress) onProgress(file.name, 'reading', 'Applying Structural Analysis...');
-          parentChunks = chunkMarkdown(cleanedText, settings.chunkSize, settings.chunkOverlap);
-      } else if (initialClass.category === 'troubleshooting') {
-          parentChunks = chunkWhole(cleanedText);
-      } else if (cleanedText.includes('سوال :')) {
-          parentChunks = chunkQA(cleanedText);
-      } else {
-          parentChunks = smartChunking(cleanedText, settings.chunkSize, settings.chunkOverlap);
-      }
-
-      if (onProgress) onProgress(file.name, 'embedding', `Chunking strategy applied. ${parentChunks.length} segments.`);
-      
-      const fileChunks: KnowledgeChunk[] = []; // Local accumulator for this file
-
+      const initialClass = classifyDocument(cleanedText, file.name);
+      const fileMetadata = extractMetadata(cleanedText, file.name, initialClass.category, initialClass.subCategory);
+      let parentChunks = smartChunking(cleanedText, settings.chunkSize, settings.chunkOverlap);
       for (let i = 0; i < parentChunks.length; i++) {
-        if (signal?.aborted) throw new Error("ABORTED");
-
-        const parentContent = parentChunks[i];
-        
-        const childChunks = smartChunking(parentContent, settings.childChunkSize, 100);
-
+        const childChunks = smartChunking(parentChunks[i], settings.childChunkSize, 100);
         for (let j = 0; j < childChunks.length; j++) {
-            if (signal?.aborted) throw new Error("ABORTED");
-
-            const childContent = childChunks[j];
-            
-            let chunkCategory = initialClass.category;
-            let chunkSubCategory = initialClass.subCategory;
-            let chunkMeta = { ...fileMetadata };
-
-            const specificClass = classifyTextSegment(childContent);
-            if (specificClass) {
-                chunkCategory = specificClass.category;
-                chunkSubCategory = specificClass.subCategory;
-                chunkMeta.category = chunkCategory;
-                chunkMeta.subCategory = chunkSubCategory;
-                chunkMeta.tags = [...chunkMeta.tags, chunkCategory, chunkSubCategory];
-            }
-
-            if (onProgress && j === 0) onProgress(file.name, 'embedding', `Vectorizing Chunk ${i+1}/${parentChunks.length}...`);
-
-            const contextHeader = `دسته: ${chunkCategory} | زیردسته: ${chunkSubCategory} | منبع: ${fileName}`;
-            const extraMeta = chunkMeta.ticketId ? ` | تیکت: ${chunkMeta.ticketId}` : '';
-            const contentToEmbed = `${contextHeader}${extraMeta} \n ${childContent}`;
-
-            let vector: number[] = [];
-            try {
-                vector = await getEmbedding(contentToEmbed, false);
-            } catch (e: any) {
-                if (e.message === "OLLAMA_CONNECTION_REFUSED") {
-                    throw e; 
-                }
-                console.warn(`Embedding failed for chunk in ${file.name}`);
-                vector = new Array(1024).fill(0); 
-            }
-
-            const newChunk: KnowledgeChunk = {
+            let vector = await getEmbedding(childChunks[j], false);
+            chunks.push({
                 id: `${file.name}-${i}-${j}-${Date.now()}`,
-                content: parentContent,      
-                searchContent: `${contextHeader}${extraMeta}\n${childContent}`, 
+                content: parentChunks[i],      
+                searchContent: childChunks[j], 
                 embedding: vector,
-                metadata: chunkMeta,
-                source: {
-                    id: file.name,
-                    title: file.name,
-                    snippet: childContent.substring(0, 80).replace(/\n/g, ' ') + "...",
-                    page: Math.floor(i / 5) + 1 
-                }
-            };
-            
-            chunks.push(newChunk);
-            fileChunks.push(newChunk);
+                metadata: fileMetadata,
+                source: { id: file.name, title: file.name, snippet: childChunks[j].substring(0, 80), page: 1 }
+            });
         }
       }
-      
-      if (onProgress) {
-          const finalClass = fileChunks.length > 0 ? fileChunks[0].metadata : initialClass;
-          onProgress(file.name, 'complete', { 
-              count: fileChunks.length,
-              category: finalClass?.category || initialClass.category,
-              subCategory: finalClass?.subCategory || initialClass.subCategory
-          });
-      }
-
-    } catch (err: any) {
-      if (err.message === "ABORTED" || err.message === "OLLAMA_CONNECTION_REFUSED") throw err;
-      
-      console.error(`Failed to process ${file.name}`, err);
-      if (onProgress) onProgress(file.name, 'error', err.message);
-    }
+      if (onProgress) onProgress(file.name, 'complete', { count: chunks.length, category: initialClass.category });
+    } catch (err: any) { if (onProgress) onProgress(file.name, 'error', err.message); }
   }
-
-  if (chunks.length > 0) {
-    await saveChunksToDB(chunks);
-  }
-
+  if (chunks.length > 0) await saveChunksToDB(chunks);
   return chunks;
 };

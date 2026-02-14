@@ -8,6 +8,7 @@ import SettingsModal from './components/SettingsModal';
 import HelpModal from './components/HelpModal';
 import BenchmarkModal from './components/BenchmarkModal';
 import KnowledgeWikiModal from './components/KnowledgeWikiModal';
+import MetricsModal from './components/MetricsModal';
 import { ProcessingOverlay } from './components/ProcessingOverlay';
 import { ViewMode, GraphLayoutMode, GraphNode } from './types';
 import { useRAGApplication } from './hooks/useRAGApplication';
@@ -25,6 +26,7 @@ function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isWikiOpen, setIsWikiOpen] = useState(false);
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
+  const [isMetricsOpen, setIsMetricsOpen] = useState(false);
   const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
   const [totalFilesToProcess, setTotalFilesToProcess] = useState(0);
   const [currentTheme, setCurrentTheme] = useState<'light'|'dark'>('dark');
@@ -200,6 +202,7 @@ function App() {
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       <KnowledgeWikiModal isOpen={isWikiOpen} onClose={() => setIsWikiOpen(false)} chunks={state.customChunks} />
       <BenchmarkModal isOpen={isBenchmarkOpen} onClose={() => setIsBenchmarkOpen(false)} chunks={state.customChunks} />
+      <MetricsModal isOpen={isMetricsOpen} onClose={() => setIsMetricsOpen(false)} chunks={state.customChunks} />
 
       {/* Sidebar */}
       <div className={`fixed inset-y-0 right-0 z-50 transform transition-transform duration-300 md:relative md:transform-none ${mobileMenuOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
@@ -217,6 +220,7 @@ function App() {
             onOpenHelp={() => setIsHelpOpen(true)}
             onOpenWiki={() => setIsWikiOpen(true)}
             onOpenBenchmark={() => setIsBenchmarkOpen(true)}
+            onOpenMetrics={() => setIsMetricsOpen(true)}
             totalChunks={state.customChunks.length}
             lastBenchmarkScore={state.lastBenchmarkScore}
          />

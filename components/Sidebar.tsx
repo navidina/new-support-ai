@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Network, History, Plus, Settings, HelpCircle, ClipboardCheck, Book, Trash2, MessageSquare, Sparkles, Box, Share2, Workflow, GitMerge, Orbit, Ticket } from 'lucide-react';
+import { Network, History, Plus, Settings, HelpCircle, ClipboardCheck, Book, Trash2, MessageSquare, Sparkles, Box, Share2, Workflow, GitMerge, Orbit, Ticket, PieChart } from 'lucide-react';
 import { Conversation, GraphLayoutMode } from '../types';
 import Button from './Button';
 
@@ -18,6 +18,7 @@ interface SidebarProps {
   onOpenHelp?: () => void;
   onOpenWiki?: () => void;
   onOpenBenchmark?: () => void;
+  onOpenMetrics?: () => void;
   totalChunks?: number;
   lastBenchmarkScore?: number | null;
 }
@@ -44,6 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     onOpenHelp,
     onOpenWiki,
     onOpenBenchmark,
+    onOpenMetrics,
 }) => {
 
   return (
@@ -186,14 +188,18 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer / Tools */}
       <div className="p-4 border-t border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-surface-950/30 z-10">
-         <div className="grid grid-cols-2 gap-2 mb-3">
-             <button onClick={onOpenBenchmark} className="flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-surface-800/50 hover:bg-slate-50 dark:hover:bg-surface-800 border border-slate-200 dark:border-white/5 hover:border-brand-300 dark:hover:border-white/10 transition-all group shadow-sm">
-                <ClipboardCheck className="w-5 h-5 text-brand-600 dark:text-brand-400 mb-1 group-hover:scale-110 transition-transform drop-shadow-[0_0_5px_rgba(129,140,248,0.5)]" />
-                <span className="text-[10px] font-bold text-slate-600 dark:text-surface-300">بنچمارک</span>
+         <div className="grid grid-cols-3 gap-1.5 mb-3">
+             <button onClick={onOpenBenchmark} className="flex flex-col items-center justify-center p-2 rounded-xl bg-white dark:bg-surface-800/50 hover:bg-slate-50 dark:hover:bg-surface-800 border border-slate-200 dark:border-white/5 hover:border-brand-300 dark:hover:border-white/10 transition-all group shadow-sm">
+                <ClipboardCheck className="w-4 h-4 text-brand-600 dark:text-brand-400 mb-1 group-hover:scale-110 transition-transform" />
+                <span className="text-[9px] font-bold text-slate-600 dark:text-surface-300">بنچمارک</span>
              </button>
-             <button onClick={onOpenWiki} className="flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-surface-800/50 hover:bg-slate-50 dark:hover:bg-surface-800 border border-slate-200 dark:border-white/5 hover:border-emerald-300 dark:hover:border-white/10 transition-all group shadow-sm">
-                <Book className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-1 group-hover:scale-110 transition-transform drop-shadow-[0_0_5px_rgba(52,211,153,0.5)]" />
-                <span className="text-[10px] font-bold text-slate-600 dark:text-surface-300">مخزن دانش</span>
+             <button onClick={onOpenWiki} className="flex flex-col items-center justify-center p-2 rounded-xl bg-white dark:bg-surface-800/50 hover:bg-slate-50 dark:hover:bg-surface-800 border border-slate-200 dark:border-white/5 hover:border-emerald-300 dark:hover:border-white/10 transition-all group shadow-sm">
+                <Book className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mb-1 group-hover:scale-110 transition-transform" />
+                <span className="text-[9px] font-bold text-slate-600 dark:text-surface-300">دانش</span>
+             </button>
+             <button onClick={onOpenMetrics} className="flex flex-col items-center justify-center p-2 rounded-xl bg-white dark:bg-surface-800/50 hover:bg-slate-50 dark:hover:bg-surface-800 border border-slate-200 dark:border-white/5 hover:border-amber-300 dark:hover:border-white/10 transition-all group shadow-sm">
+                <PieChart className="w-4 h-4 text-amber-500 dark:text-amber-400 mb-1 group-hover:scale-110 transition-transform" />
+                <span className="text-[9px] font-bold text-slate-600 dark:text-surface-300">گزارشات</span>
              </button>
          </div>
 

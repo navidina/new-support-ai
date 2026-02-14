@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Settings, Database, Server, Save, Trash2, Upload, FileText, CheckCircle2, AlertCircle, Download, Activity, Cpu, Crosshair, Sun, Moon } from 'lucide-react';
+import { X, Settings, Database, Server, Save, Trash2, Upload, FileText, CheckCircle2, AlertCircle, Download, Activity, Cpu, Crosshair, Sun, Moon, ToggleLeft, ToggleRight } from 'lucide-react';
 import { AppSettings, DocumentStatus } from '../types';
 import { getSettings, updateSettings } from '../services/settings';
 import { toPersianDigits } from '../services/textProcessor';
@@ -51,6 +51,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setFormData(prev => ({
             ...prev,
             theme: prev.theme === 'dark' ? 'light' : 'dark'
+        }));
+    };
+
+    const toggleReranker = () => {
+        setFormData(prev => ({
+            ...prev,
+            enableReranker: !prev.enableReranker
         }));
     };
 
@@ -278,24 +285,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-bold text-slate-600 dark:text-surface-300 flex items-center gap-2">
-                                    <Crosshair className="w-4 h-4 text-rose-500 dark:text-rose-400" />
-                                    Reranker Model (مدل رتبه‌بندی مجدد)
-                                </label>
+                            <div className="space-y-2 bg-slate-50 dark:bg-surface-800/30 p-4 rounded-xl border border-slate-200 dark:border-white/10">
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-sm font-bold text-slate-600 dark:text-surface-300 flex items-center gap-2">
+                                        <Crosshair className="w-4 h-4 text-rose-500 dark:text-rose-400" />
+                                        Hybrid Reranker Engine
+                                    </label>
+                                    <button 
+                                        onClick={toggleReranker}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ${formData.enableReranker ? 'bg-brand-600' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.enableReranker ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                                
+                                <p className="text-[10px] text-slate-500 dark:text-surface-500 mb-3 leading-5">
+                                    استفاده از الگوریتم ترکیبی (امتیاز برداری + تطبیق کلمات کلیدی) برای مرتب‌سازی دقیق نتایج.
+                                    <br/>
+                                    اگر برنامه در مرحله "Reranking" متوقف می‌شود، این گزینه را خاموش کنید.
+                                </p>
+
                                 <input 
                                     type="text" 
                                     name="rerankerModel"
                                     value={formData.rerankerModel}
                                     onChange={handleChange}
-                                    className="w-full p-3 bg-slate-100 dark:bg-surface-950 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none dir-ltr font-mono transition-all"
-                                    placeholder="Xenova/bge-reranker-v2-m3"
+                                    disabled={!formData.enableReranker}
+                                    className="w-full p-2 bg-white dark:bg-surface-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs text-slate-800 dark:text-white disabled:opacity-50"
+                                    placeholder="Hybrid-Local-Engine"
                                 />
-                                <p className="text-[10px] text-slate-500 dark:text-surface-500">
-                                    مدل Cross-Encoder برای افزایش دقت جستجو. (پیش‌فرض: Xenova/bge-reranker-v2-m3)
-                                    <br/>
-                                    این مدل در مرورگر دانلود و اجرا می‌شود (Transformers.js).
-                                </p>
                             </div>
 
                             <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-white/10">

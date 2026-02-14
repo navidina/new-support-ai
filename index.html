@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><path d='M12 16v-4'/><path d='M12 8h.01'/></svg>" />
     <title>دستیار هوشمند رایان هم‌افزا</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -17,14 +18,13 @@
               mono: ['Fira Code', 'ui-monospace', 'SFMono-Regular', 'monospace'],
             },
             colors: {
-              // Dark Enterprise Palette
               brand: {
                 50: '#eef2ff',
                 100: '#e0e7ff',
                 200: '#c7d2fe',
                 300: '#a5b4fc',
                 400: '#818cf8',
-                500: '#6366f1', // Primary Indigo
+                500: '#6366f1',
                 600: '#4f46e5',
                 700: '#4338ca',
                 800: '#3730a3',
@@ -40,9 +40,9 @@
                 500: '#64748b',
                 600: '#475569',
                 700: '#334155',
-                800: '#1e293b', // Card Dark
-                900: '#0f172a', // Sidebar Dark
-                950: '#020617', // Main Body Dark
+                800: '#1e293b',
+                900: '#0f172a',
+                950: '#020617',
               },
               accent: {
                 cyan: '#06b6d4',
@@ -90,15 +90,15 @@
         }
       }
     </script>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
       body, input, textarea, button, select {
         font-family: 'Vazirmatn', sans-serif !important;
-        background-color: #020617; /* Surface 950 */
-        color: #e2e8f0; /* Surface 200 */
+        background-color: #020617;
+        color: #e2e8f0;
         overflow: hidden; 
       }
       
@@ -106,7 +106,6 @@
         font-family: 'Fira Code', monospace !important;
       }
 
-      /* Custom Scrollbar for Dark Theme */
       .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); }
       .custom-scrollbar::-webkit-scrollbar-thumb {
@@ -115,7 +114,6 @@
       }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
       
-      /* Glassmorphism Utilities */
       .glass-panel {
         background: rgba(30, 41, 59, 0.6);
         backdrop-filter: blur(16px);
@@ -130,7 +128,6 @@
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
       }
 
-      /* Markdown Content Styling */
       .markdown-content strong { color: #f8fafc; font-weight: 700; }
       .markdown-content a { color: #818cf8; text-decoration: underline; }
       .markdown-content ul, .markdown-content ol { padding-right: 1.5rem; }
@@ -143,25 +140,13 @@
     "react": "https://aistudiocdn.com/react@^19.2.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
-    "@xenova/transformers": "https://esm.sh/@xenova/transformers@^2.17.2"
+    "mermaid": "https://esm.sh/mermaid@10.9.1"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <!-- Entry Point for Vite/Build Tools -->
     <script type="module" src="/index.tsx"></script>
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        if (window.mermaid) {
-          mermaid.initialize({ 
-            startOnLoad: true, 
-            theme: 'dark',
-            securityLevel: 'loose'
-          });
-        }
-      });
-    </script>
   </body>
 </html>
