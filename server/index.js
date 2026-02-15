@@ -218,16 +218,35 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
+// NEW: Retrieve all chunks (without vectors) for Graph/Wiki
+app.get('/api/chunks', async (req, res) => {
+    try {
+        if (!table) return res.json([]);
+        // Fetch chunks. Limit set high for local use. 
+        // Note: For very large datasets, pagination would be needed.
+        const results = await table.query().limit(50000).execute();
+        
+        // Strip heavy vectors to reduce bandwidth
+        const sanitized = results.map(r => {
+            const { vector, ...rest } = r; 
+            return rest;
+        });
+        
+        res.json(sanitized);
+    } catch (e) {
+        console.error("Fetch Chunks Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/chat', async (req, res) => {
     try {
         const { configuration, ...chatBody } = req.body;
         const baseUrl = configuration?.ollamaBaseUrl || DEFAULT_OLLAMA_URL;
         
-        // Use OpenAI compatible endpoint usually found at /v1/chat/completions
-        // If baseUrl is http://localhost:1234/v1, we append /chat/completions
         const endpoint = baseUrl.endsWith('/v1') 
             ? `${baseUrl}/chat/completions` 
-            : `${baseUrl}/api/chat`; // Fallback for standard Ollama
+            : `${baseUrl}/api/chat`; 
 
         const response = await fetch(endpoint, {
             method: 'POST',

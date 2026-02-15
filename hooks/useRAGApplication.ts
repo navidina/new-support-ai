@@ -52,11 +52,13 @@ export const useRAGApplication = () => {
     const [processingType, setProcessingType] = useState<'file' | 'chat' | 'idle'>('idle');
     const [isDbLoading, setIsDbLoading] = useState(true);
     const [processingStatus, setProcessingStatus] = useState<string>('');
+    
+    // IMPORTANT: Initialize as empty array, DO NOT fill with empty objects
     const [customChunks, setCustomChunks] = useState<KnowledgeChunk[]>([]);
     const [ticketChunks, setTicketChunks] = useState<KnowledgeChunk[]>([]); 
     const [docsList, setDocsList] = useState<DocumentStatus[]>([]);
     const [isOllamaOnline, setIsOllamaOnline] = useState<boolean>(false);
-    const [isServerOnline, setIsServerOnline] = useState<boolean>(false); // New: Track server health
+    const [isServerOnline, setIsServerOnline] = useState<boolean>(false); 
     const [lastBenchmarkScore, setLastBenchmarkScore] = useState<number | null>(null);
     const [fineTuningCount, setFineTuningCount] = useState(0); 
     const [serverChunkCount, setServerChunkCount] = useState(0);
@@ -65,7 +67,7 @@ export const useRAGApplication = () => {
     const isDbInitialized = useRef(false);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    // --- Periodic Health Check ---
+    // --- Periodic Health Check & Data Sync ---
     useEffect(() => {
         const checkHealth = async () => {
             const ollamaStatus = await checkOllamaConnection();
@@ -92,7 +94,6 @@ export const useRAGApplication = () => {
                 await loadHistory();
                 await loadBenchmarkStats();
                 await updateFineTuningCount(); 
-                // loadServerStats called in health check already
             } catch (error) {
                 console.error("Failed to load DB", error);
             } finally {
@@ -128,23 +129,64 @@ export const useRAGApplication = () => {
     const loadServerStats = async () => {
         try {
             const settings = getSettings();
-            // Fail fast if offline
+            // Longer timeout for stats/data sync
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            const timeoutId = setTimeout(() => controller.abort(), 8000); 
             
             const res = await fetch(`${settings.serverUrl}/stats`, { signal: controller.signal });
             clearTimeout(timeoutId);
 
             if (res.ok) {
                 const data = await res.json();
-                setServerChunkCount(data.count || 0);
+                const count = data.count || 0;
+                setServerChunkCount(count);
                 setIsServerOnline(true);
+
+                // If server has data but we haven't loaded it into client state yet, fetch it.
+                // We use state functional update to check current length to avoid stale closures
+                setCustomChunks(prev => {
+                    if (count > 0 && prev.length !== count) {
+                        syncChunksFromServer(settings.serverUrl);
+                        return prev; // Return current for now, sync will update it later
+                    }
+                    return prev;
+                });
             } else {
                 setIsServerOnline(false);
             }
         } catch (e) {
-            // Suppress error in console, just mark offline
             setIsServerOnline(false);
+        }
+    };
+
+    const syncChunksFromServer = async (serverUrl: string) => {
+        try {
+            const res = await fetch(`${serverUrl}/chunks`);
+            if (res.ok) {
+                const rows = await res.json();
+                // Map Server DB rows to Frontend KnowledgeChunk type
+                const mappedChunks: KnowledgeChunk[] = rows.map((r: any) => ({
+                    id: r.id,
+                    content: r.content,
+                    searchContent: r.content, 
+                    embedding: [], // Vectors are stripped to save memory
+                    metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : (r.metadata || {}),
+                    source: typeof r.source_json === 'string' ? JSON.parse(r.source_json) : (r.source_json || { id: 'unknown', title: 'unknown' }),
+                    createdAt: r.created_at
+                }));
+                setCustomChunks(mappedChunks);
+                
+                // Update docs list based on chunks
+                const files = new Set<string>();
+                mappedChunks.forEach(c => { if(c.source?.id) files.add(c.source.id); });
+                setDocsList(Array.from(files).map(f => ({ 
+                    name: f, 
+                    status: 'indexed', 
+                    chunks: mappedChunks.filter(c => c.source.id === f).length 
+                })));
+            }
+        } catch(e) {
+            console.error("Failed to sync chunks", e);
         }
     };
 
@@ -209,7 +251,7 @@ export const useRAGApplication = () => {
             const history = messages.filter(m => !m.isThinking && m.id !== 'init-1').slice(-6);
             const response = await processQuery(
                 queryText, 
-                [], // No local chunks
+                [], // No local chunks (search happens on server)
                 (pipelineData: PipelineData) => {
                     setMessages(prev => prev.map(msg => {
                         if (msg.id === responseMsgId) {
@@ -276,7 +318,6 @@ export const useRAGApplication = () => {
     const handleSendMessage = async () => {
         if (!inputText.trim() || isProcessing) return;
 
-        // In client-server mode, rely on server count
         if (serverChunkCount === 0 && customChunks.length === 0) {
              await loadServerStats();
              if (serverChunkCount === 0) {
@@ -326,7 +367,7 @@ export const useRAGApplication = () => {
                 },
                 abortControllerRef.current.signal 
             );
-            await loadServerStats(); // Update count
+            await loadServerStats(); // Update count and fetch new data
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
                 role: 'system',
@@ -347,6 +388,7 @@ export const useRAGApplication = () => {
             await clearDatabase();
             setCustomChunks([]);
             setServerChunkCount(0);
+            setDocsList([]);
             alert('پایگاه داده پاک شد.');
         }
     };
@@ -367,11 +409,11 @@ export const useRAGApplication = () => {
             processingType,
             isDbLoading,
             processingStatus,
-            customChunks: Array(serverChunkCount).fill({}), // Fake array to satisfy "length > 0" checks in UI
+            customChunks, // Now contains real data
             ticketChunks,
             docsList,
             isOllamaOnline,
-            isServerOnline, // Exported to UI
+            isServerOnline, 
             useWebSearch,
             lastBenchmarkScore,
             fineTuningCount 
