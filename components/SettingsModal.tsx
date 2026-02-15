@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Settings, Database, Server, Save, Trash2, Upload, FileText, CheckCircle2, AlertCircle, Download, Activity, Cpu, Crosshair, Sun, Moon, Network } from 'lucide-react';
+import { X, Settings, Database, Server, Save, Trash2, Upload, FileText, CheckCircle2, AlertCircle, Download, Activity, Cpu, Crosshair, Sun, Moon, Network, Zap } from 'lucide-react';
 import { AppSettings, DocumentStatus } from '../types';
 import { getSettings, updateSettings } from '../services/settings';
 import { toPersianDigits } from '../services/textProcessor';
+import { checkOllamaConnection } from '../services/ollama';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -30,12 +31,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<'documents' | 'models' | 'advanced'>('documents');
     const [formData, setFormData] = useState<AppSettings>(getSettings());
+    const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dbInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (isOpen) {
             setFormData(getSettings());
+            setConnectionStatus('idle');
         }
     }, [isOpen]);
 
@@ -45,6 +48,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             ...prev,
             [name]: type === 'number' || type === 'range' ? parseFloat(value) : value
         }));
+        // Reset connection status if URL changes
+        if (name === 'ollamaBaseUrl') setConnectionStatus('idle');
     };
 
     const toggleTheme = () => {
@@ -61,11 +66,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }));
     };
 
+    const handleTestConnection = async () => {
+        setConnectionStatus('testing');
+        const isOk = await checkOllamaConnection(formData.ollamaBaseUrl);
+        setConnectionStatus(isOk ? 'success' : 'failed');
+    };
+
     const handleSave = (e?: React.MouseEvent) => {
-        e?.preventDefault(); // Prevent form submission issues
-        
+        e?.preventDefault(); 
         try {
-            // Ensure URLs don't have trailing slashes for consistency
             const cleanData = { ...formData };
             if (cleanData.serverUrl) cleanData.serverUrl = cleanData.serverUrl.replace(/\/$/, '');
             if (cleanData.ollamaBaseUrl) cleanData.ollamaBaseUrl = cleanData.ollamaBaseUrl.replace(/\/$/, '');
@@ -74,8 +83,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             updateSettings(cleanData);
             onClose();
             
-            // Force reload to apply critical network settings
-            // Small delay to ensure localStorage write completes
             setTimeout(() => {
                 window.location.reload();
             }, 100);
@@ -287,14 +294,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <Cpu className="w-4 h-4 text-blue-500" />
                                         Ollama API URL
                                     </label>
-                                    <input 
-                                        type="text" 
-                                        name="ollamaBaseUrl"
-                                        value={formData.ollamaBaseUrl}
-                                        onChange={handleChange}
-                                        className="w-full p-3 bg-slate-100 dark:bg-surface-950 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none dir-ltr font-mono transition-all"
-                                        placeholder="http://localhost:11434/v1"
-                                    />
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="text" 
+                                            name="ollamaBaseUrl"
+                                            value={formData.ollamaBaseUrl}
+                                            onChange={handleChange}
+                                            className="flex-1 p-3 bg-slate-100 dark:bg-surface-950 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none dir-ltr font-mono transition-all"
+                                            placeholder="http://localhost:11434/v1"
+                                        />
+                                        <button 
+                                            onClick={handleTestConnection}
+                                            disabled={connectionStatus === 'testing'}
+                                            className={`px-3 rounded-xl border flex items-center justify-center transition-all ${
+                                                connectionStatus === 'success' ? 'bg-emerald-500 text-white border-emerald-500' :
+                                                connectionStatus === 'failed' ? 'bg-red-500 text-white border-red-500' :
+                                                'bg-slate-100 dark:bg-surface-800 border-slate-200 dark:border-white/10 hover:bg-slate-200'
+                                            }`}
+                                            title="تست اتصال"
+                                        >
+                                            {connectionStatus === 'testing' ? <Zap className="w-4 h-4 animate-spin" /> : 
+                                             connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : 
+                                             connectionStatus === 'failed' ? <AlertCircle className="w-4 h-4" /> : 
+                                             <Zap className="w-4 h-4 text-slate-500" />}
+                                        </button>
+                                    </div>
                                     <p className="text-[10px] text-slate-500 dark:text-surface-500">آدرس مدل هوش مصنوعی (LM Studio / Ollama).</p>
                                 </div>
                             </div>

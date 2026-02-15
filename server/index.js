@@ -46,10 +46,12 @@ async function initDB() {
 // --- HELPER FUNCTIONS ---
 
 function getEmbeddingEndpoint(baseUrl) {
-    if (baseUrl.endsWith('/v1')) {
-        return `${baseUrl}/embeddings`; 
+    // Ensure no trailing slash
+    const cleanUrl = baseUrl.replace(/\/$/, '');
+    if (cleanUrl.endsWith('/v1')) {
+        return `${cleanUrl}/embeddings`; 
     }
-    return `${baseUrl}/api/embeddings`; 
+    return `${cleanUrl}/api/embeddings`; 
 }
 
 async function getEmbedding(text, config = {}) {
@@ -79,7 +81,9 @@ async function getEmbedding(text, config = {}) {
         const data = await response.json();
         return data.embedding || (data.data && data.data[0] ? data.data[0].embedding : null);
     } catch (error) {
-        console.error("Embedding Connection Error:", error.message);
+        console.error(`Embedding Connection Error to ${endpoint}:`, error.message);
+        // Pass the specific error up via a property if needed, but for now returning null causes the 500 later.
+        // We log it here so the server console is useful.
         return null;
     }
 }
@@ -128,6 +132,8 @@ app.post('/api/ingest', async (req, res) => {
         console.log(`📥 Receiving ${chunks.length} chunks. Config:`, configuration);
 
         const processedChunks = [];
+        let errorCount = 0;
+
         for (const chunk of chunks) {
             const vector = await getEmbedding(chunk.searchContent || chunk.content, configuration);
             if (vector && Array.isArray(vector) && vector.length > 0) {
@@ -140,26 +146,27 @@ app.post('/api/ingest', async (req, res) => {
                     source_json: JSON.stringify(chunk.source),
                     created_at: Date.now()
                 });
+            } else {
+                errorCount++;
             }
         }
 
         if (processedChunks.length === 0) {
-            return res.status(500).json({ error: 'Failed to generate embeddings. Check Ollama URL/Model.' });
+            const msg = errorCount > 0 
+                ? `Ollama Connection Failed. Could not generate embeddings for any of the ${chunks.length} chunks. Check server console for network details.` 
+                : 'No chunks were successfully processed.';
+            return res.status(500).json({ error: msg });
         }
 
         if (!table) {
-            // First run, create table
             table = await db.createTable('knowledge_chunks', processedChunks);
         } else {
-            // Check if vectors match existing table schema logic implicitly
             try {
                 await table.add(processedChunks);
             } catch (addError) {
-                console.warn("⚠️ Schema Mismatch detected (Embedding Dimension changed?). Recreating table...");
-                // Drop and Recreate
+                console.warn("⚠️ Schema Mismatch detected. Recreating table...");
                 await db.dropTable('knowledge_chunks');
                 table = await db.createTable('knowledge_chunks', processedChunks);
-                console.log("♻️ Table recreated with new schema.");
             }
         }
 
@@ -180,7 +187,6 @@ app.post('/api/search', async (req, res) => {
 
         const queryVector = await getEmbedding(query, configuration);
         if (!queryVector) {
-            // Fallback if embedding fails: return empty or try keyword search if lancedb supported full text (it doesn't natively mix easily without vector)
             return res.status(500).json({ error: 'Embedding failed. Check Ollama URL.' });
         }
 
@@ -227,7 +233,6 @@ app.get('/api/stats', async (req, res) => {
         const count = await table.countRows();
         res.json({ count });
     } catch (e) {
-        // If countRows fails, maybe table is corrupt or not init. Return 0.
         res.json({ count: 0 });
     }
 });
@@ -235,20 +240,14 @@ app.get('/api/stats', async (req, res) => {
 app.get('/api/chunks', async (req, res) => {
     try {
         if (!table) return res.json([]);
-        
-        // Fetch chunks safely.
         const results = await table.query().limit(20000).execute();
-        
         const sanitized = results.map(r => {
-            // Defensive coding against missing fields
             const { vector, ...rest } = r || {};
             return rest;
         });
-        
         res.json(sanitized);
     } catch (e) {
-        console.error("Fetch Chunks Error (Safe Fallback):", e.message);
-        // Do NOT return 500, return empty array to keep frontend alive
+        console.error("Fetch Chunks Error:", e.message);
         res.json([]);
     }
 });
@@ -258,9 +257,11 @@ app.post('/api/chat', async (req, res) => {
         const { configuration, ...chatBody } = req.body;
         const baseUrl = configuration?.ollamaBaseUrl || DEFAULT_OLLAMA_URL;
         
-        const endpoint = baseUrl.endsWith('/v1') 
-            ? `${baseUrl}/chat/completions` 
-            : `${baseUrl}/api/chat`; 
+        // Ensure no trailing slash for endpoint construction
+        const cleanUrl = baseUrl.replace(/\/$/, '');
+        const endpoint = cleanUrl.endsWith('/v1') 
+            ? `${cleanUrl}/chat/completions` 
+            : `${cleanUrl}/api/chat`; 
 
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -287,13 +288,11 @@ app.post('/api/reset', async (req, res) => {
             try { await db.dropTable('knowledge_chunks'); } catch(e) {}
             table = null;
         }
-        // Force clean directory if needed
         const fs = require('fs');
         if (fs.existsSync(DB_PATH)) {
              fs.rmSync(DB_PATH, { recursive: true, force: true });
              fs.mkdirSync(DB_PATH);
         }
-        // Reconnect
         await initDB();
         res.json({ success: true });
     } catch (e) {
