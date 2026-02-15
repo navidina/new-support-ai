@@ -7,7 +7,7 @@ import { getSettings } from './settings';
 const DB_CONFIG = {
     dbName: 'RayanRAG_LocalCache',
     version: 5, 
-    stores: ['conversations', 'benchmark_runs', 'fine_tuning_dataset', 'tickets'] // Removed 'chunks' as it's now on server
+    stores: ['conversations', 'benchmark_runs', 'fine_tuning_dataset', 'tickets'] 
 };
 
 const db = new LocalDB(DB_CONFIG);
@@ -21,7 +21,7 @@ const getDB = async () => {
 
 /**
  * Sends a batch of knowledge chunks to the Central Server for ingestion.
- * @param {KnowledgeChunk[]} chunks - Array of chunks (embeddings will be generated on server).
+ * Includes current configuration so the server uses the correct Ollama instance.
  */
 export const saveChunksToDB = async (chunks: KnowledgeChunk[]): Promise<void> => {
     const settings = getSettings();
@@ -29,10 +29,16 @@ export const saveChunksToDB = async (chunks: KnowledgeChunk[]): Promise<void> =>
         const response = await fetch(`${settings.serverUrl}/ingest`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chunks })
+            body: JSON.stringify({ 
+                chunks,
+                configuration: {
+                    ollamaBaseUrl: settings.ollamaBaseUrl,
+                    embeddingModel: settings.embeddingModel
+                }
+            })
         });
         
-        if (!response.ok) throw new Error('Server ingestion failed');
+        if (!response.ok) throw new Error('Server ingestion failed. Check Server logs.');
         const data = await response.json();
         console.log(`Server responded: ${data.count} chunks indexed.`);
     } catch (e: any) {
@@ -45,9 +51,6 @@ export const saveChunksToDB = async (chunks: KnowledgeChunk[]): Promise<void> =>
  * Loads chunk count from server (instead of full download).
  */
 export const loadChunksFromDB = async (): Promise<KnowledgeChunk[]> => {
-    // We do NOT load all chunks to client memory in centralized mode.
-    // Return empty array to satisfy type signature, or fetch minimal metadata if needed.
-    // Real search happens via API.
     return []; 
 };
 
@@ -71,8 +74,7 @@ export const clearDatabase = async (): Promise<void> => {
     }
 };
 
-// --- TICKET KNOWLEDGE BASE OPERATIONS (ISOLATED - Keep Local for now or move to server later) ---
-// For now, keeping tickets local to avoid breaking that specific module if it's meant to be ad-hoc analysis.
+// --- TICKET KNOWLEDGE BASE OPERATIONS (ISOLATED) ---
 export const saveTicketsToDB = async (chunks: KnowledgeChunk[]): Promise<void> => {
     const database = await getDB();
     await database.collection<KnowledgeChunk>('tickets').insertMany(chunks);
@@ -156,7 +158,6 @@ export const getFineTuningCount = async (): Promise<number> => {
 };
 
 export const exportDatabaseToBlob = async (): Promise<Blob> => {
-    // Only exports local conversations in this mode
     const conversations = await loadConversationsFromDB();
     return new Blob([JSON.stringify(conversations, null, 2)], { type: 'application/json' });
 };
@@ -167,7 +168,5 @@ export const exportDatabaseToJson = async (): Promise<string> => {
 };
 
 export const importDatabaseFromJson = async (jsonString: string): Promise<KnowledgeChunk[]> => {
-    // Import logic for Server is complex (requires re-ingestion). 
-    // For now, we disabled full DB import/export in Central Mode.
     throw new Error("Direct DB Import is disabled in Centralized Mode. Please use 'Upload Files' to ingest data to the server.");
 };

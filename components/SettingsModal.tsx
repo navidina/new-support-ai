@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Settings, Database, Server, Save, Trash2, Upload, FileText, CheckCircle2, AlertCircle, Download, Activity, Cpu, Crosshair, Sun, Moon, ToggleLeft, ToggleRight } from 'lucide-react';
+import { X, Settings, Database, Server, Save, Trash2, Upload, FileText, CheckCircle2, AlertCircle, Download, Activity, Cpu, Crosshair, Sun, Moon, Network } from 'lucide-react';
 import { AppSettings, DocumentStatus } from '../types';
 import { getSettings, updateSettings } from '../services/settings';
 import { toPersianDigits } from '../services/textProcessor';
@@ -62,8 +62,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     const handleSave = () => {
-        updateSettings(formData);
+        // Ensure URLs don't have trailing slashes for consistency
+        const cleanData = { ...formData };
+        if (cleanData.serverUrl.endsWith('/')) cleanData.serverUrl = cleanData.serverUrl.slice(0, -1);
+        if (cleanData.ollamaBaseUrl.endsWith('/')) cleanData.ollamaBaseUrl = cleanData.ollamaBaseUrl.slice(0, -1);
+        
+        updateSettings(cleanData);
         onClose();
+        // Force reload to apply critical network settings
+        window.location.reload();
     };
 
     if (!isOpen) return null;
@@ -242,20 +249,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 p-4 rounded-xl mb-4">
                                 <p className="text-xs text-blue-600 dark:text-blue-300 flex items-center gap-2">
                                     <Activity className="w-4 h-4" />
-                                    توجه: برای اعمال تغییرات مدل، پس از ذخیره صفحه را رفرش کنید.
+                                    توجه: برای اعمال تغییرات مدل، پس از ذخیره صفحه رفرش خواهد شد.
                                 </p>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-bold text-slate-600 dark:text-surface-300">Ollama API URL</label>
-                                <input 
-                                    type="text" 
-                                    name="ollamaBaseUrl"
-                                    value={formData.ollamaBaseUrl}
-                                    onChange={handleChange}
-                                    className="w-full p-3 bg-slate-100 dark:bg-surface-950 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none dir-ltr font-mono transition-all"
-                                    placeholder="http://localhost:11434"
-                                />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-slate-600 dark:text-surface-300 flex items-center gap-2">
+                                        <Network className="w-4 h-4 text-emerald-500" />
+                                        Central Server URL (Backend)
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        name="serverUrl"
+                                        value={formData.serverUrl}
+                                        onChange={handleChange}
+                                        className="w-full p-3 bg-slate-100 dark:bg-surface-950 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none dir-ltr font-mono transition-all"
+                                        placeholder="http://localhost:3001/api"
+                                    />
+                                    <p className="text-[10px] text-slate-500 dark:text-surface-500">آدرس سرور Node.js که LanceDB روی آن اجرا می‌شود.</p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-slate-600 dark:text-surface-300 flex items-center gap-2">
+                                        <Cpu className="w-4 h-4 text-blue-500" />
+                                        Ollama API URL
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        name="ollamaBaseUrl"
+                                        value={formData.ollamaBaseUrl}
+                                        onChange={handleChange}
+                                        className="w-full p-3 bg-slate-100 dark:bg-surface-950 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none dir-ltr font-mono transition-all"
+                                        placeholder="http://localhost:11434/v1"
+                                    />
+                                    <p className="text-[10px] text-slate-500 dark:text-surface-500">آدرس مدل هوش مصنوعی (LM Studio / Ollama).</p>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

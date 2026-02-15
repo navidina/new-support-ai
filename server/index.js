@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const lancedb = require('@lancedb/lancedb');
@@ -8,9 +9,9 @@ const fs = require('fs');
 const app = express();
 const PORT = 3001; 
 
-// Configuration
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-const EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5@q4_k_m'; 
+// Default Configuration (Fallback)
+const DEFAULT_OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+const DEFAULT_EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5@q4_k_m'; 
 const DB_PATH = path.join(__dirname, 'data', 'rayan-db');
 
 app.use(cors());
@@ -21,13 +22,11 @@ let db;
 let table;
 
 async function initDB() {
-    // Ensure data directory exists
     const dataDir = path.dirname(DB_PATH);
     if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
     }
     
-    // Connect to LanceDB
     db = await lancedb.connect(DB_PATH);
     console.log(`📂 LanceDB connected at ${DB_PATH}`);
     
@@ -41,24 +40,42 @@ async function initDB() {
 
 // --- HELPER FUNCTIONS ---
 
-async function getEmbedding(text) {
+// Construct the correct embedding endpoint based on the base URL
+function getEmbeddingEndpoint(baseUrl) {
+    if (baseUrl.endsWith('/v1')) {
+        return `${baseUrl}/embeddings`; // OpenAI Compatible
+    }
+    return `${baseUrl}/api/embeddings`; // Standard Ollama
+}
+
+async function getEmbedding(text, config = {}) {
+    const baseUrl = config.ollamaBaseUrl || DEFAULT_OLLAMA_URL;
+    const model = config.embeddingModel || DEFAULT_EMBEDDING_MODEL;
+    const endpoint = getEmbeddingEndpoint(baseUrl);
+
     try {
-        const response = await fetch(`${OLLAMA_URL}/api/embeddings`, {
+        // Handle OpenAI format vs Ollama format
+        let body;
+        if (baseUrl.endsWith('/v1')) {
+            body = { model: model, input: text };
+        } else {
+            body = { model: model, prompt: text };
+        }
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: EMBEDDING_MODEL,
-                prompt: text
-            })
+            body: JSON.stringify(body)
         });
         
         if (!response.ok) {
-            console.error(`Ollama Embedding Error: ${response.status} ${response.statusText}`);
+            console.error(`Embedding Error (${response.status}) at ${endpoint}`);
             return null;
         }
 
         const data = await response.json();
-        return data.embedding;
+        // Support both formats
+        return data.embedding || (data.data && data.data[0] ? data.data[0].embedding : null);
     } catch (error) {
         console.error("Embedding Connection Error:", error.message);
         return null;
@@ -101,16 +118,16 @@ const calculateKeywordScore = (query, content) => {
 
 app.post('/api/ingest', async (req, res) => {
     try {
-        const { chunks } = req.body;
+        const { chunks, configuration } = req.body;
         if (!chunks || !Array.isArray(chunks)) {
             return res.status(400).json({ error: 'Invalid chunks data' });
         }
 
-        console.log(`📥 Receiving ${chunks.length} chunks...`);
+        console.log(`📥 Receiving ${chunks.length} chunks. Config:`, configuration);
 
         const processedChunks = [];
         for (const chunk of chunks) {
-            const vector = await getEmbedding(chunk.searchContent || chunk.content);
+            const vector = await getEmbedding(chunk.searchContent || chunk.content, configuration);
             if (vector) {
                 processedChunks.push({
                     id: chunk.id,
@@ -125,7 +142,7 @@ app.post('/api/ingest', async (req, res) => {
         }
 
         if (processedChunks.length === 0) {
-            return res.status(500).json({ error: 'Failed to generate embeddings. Check Ollama.' });
+            return res.status(500).json({ error: 'Failed to generate embeddings. Check Ollama URL/Model.' });
         }
 
         if (!table) {
@@ -145,13 +162,13 @@ app.post('/api/ingest', async (req, res) => {
 
 app.post('/api/search', async (req, res) => {
     try {
-        const { query, categoryFilter, vectorWeight = 0.35, topK = 20 } = req.body;
+        const { query, categoryFilter, vectorWeight = 0.35, topK = 20, configuration } = req.body;
         
         if (!table) return res.json([]);
 
-        const queryVector = await getEmbedding(query);
+        const queryVector = await getEmbedding(query, configuration);
         if (!queryVector) {
-            return res.status(500).json({ error: 'Embedding failed' });
+            return res.status(500).json({ error: 'Embedding failed. Check Ollama URL.' });
         }
 
         let results = await table.search(queryVector)
@@ -203,15 +220,24 @@ app.get('/api/stats', async (req, res) => {
 
 app.post('/api/chat', async (req, res) => {
     try {
-        const response = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
+        const { configuration, ...chatBody } = req.body;
+        const baseUrl = configuration?.ollamaBaseUrl || DEFAULT_OLLAMA_URL;
+        
+        // Use OpenAI compatible endpoint usually found at /v1/chat/completions
+        // If baseUrl is http://localhost:1234/v1, we append /chat/completions
+        const endpoint = baseUrl.endsWith('/v1') 
+            ? `${baseUrl}/chat/completions` 
+            : `${baseUrl}/api/chat`; // Fallback for standard Ollama
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body)
+            body: JSON.stringify(chatBody)
         });
         
         if (!response.ok) {
             const err = await response.text();
-            throw new Error(`Ollama Error: ${err}`);
+            throw new Error(`AI Provider Error: ${err}`);
         }
 
         const data = await response.json();

@@ -49,6 +49,12 @@ export const processQuery = async (
 
     const startTime = Date.now();
 
+    // Config object to pass to server
+    const serverConfig = {
+        ollamaBaseUrl: settings.ollamaBaseUrl,
+        embeddingModel: settings.embeddingModel
+    };
+
     try {
         const expandedQuery = expandQueryWithSynonyms(query);
         onProgress?.({ step: 'searching', expandedQuery });
@@ -63,7 +69,8 @@ export const processQuery = async (
                     query: expandedQuery,
                     categoryFilter,
                     vectorWeight: settings.vectorWeight,
-                    topK: 8
+                    topK: 8,
+                    configuration: serverConfig
                 })
             });
 
@@ -88,7 +95,6 @@ export const processQuery = async (
 
         try {
             // --- UPDATED: Use Server Proxy for Chat Generation ---
-            // This avoids CORS issues and ensures requests go through the central server
             const response = await fetch(`${settings.serverUrl}/chat`, {
                 method: 'POST',
                 headers: { 
@@ -101,7 +107,8 @@ export const processQuery = async (
                         { role: 'user', content: `CONTEXT:\n${context}\n\nQUESTION: ${query}` }
                     ],
                     temperature: settings.temperature,
-                    stream: false
+                    stream: false,
+                    configuration: serverConfig
                 }),
                 signal: controller.signal
             });
