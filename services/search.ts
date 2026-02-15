@@ -27,7 +27,6 @@ const expandQueryWithSynonyms = (query: string) => {
 
 export const processQuery = async (
     query: string,
-    // KnowledgeBase is unused in Central mode
     _unused_knowledgeBase: any[],
     onProgress: any,
     categoryFilter?: string,
@@ -39,7 +38,6 @@ export const processQuery = async (
 ) => {
     const globalSettings = getSettings();
     
-    // Merge overrides with global settings
     const settings = { 
         ...globalSettings, 
         ...searchOverrides,
@@ -56,8 +54,6 @@ export const processQuery = async (
         onProgress?.({ step: 'searching', expandedQuery });
         
         // --- CENTRALIZED SEARCH ---
-        // Send query to Node.js/LanceDB Server
-        
         let topChunks = [];
         try {
             const searchResponse = await fetch(`${settings.serverUrl}/search`, {
@@ -67,7 +63,7 @@ export const processQuery = async (
                     query: expandedQuery,
                     categoryFilter,
                     vectorWeight: settings.vectorWeight,
-                    topK: 8 // Get top 8 results
+                    topK: 8
                 })
             });
 
@@ -84,17 +80,16 @@ export const processQuery = async (
 
         onProgress?.({ step: 'generating' });
         
-        // Include Score in context for the LLM
         const context = topChunks.map(c => `[سند: ${c.source.id} (Score: ${c.score?.toFixed(2)})]\n${c.content}`).join('\n\n---\n\n');
         const systemInstruction = isAdvisorMode ? SUPPORT_ADVISOR_PROMPT : settings.systemPrompt;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s Timeout
+        const timeoutId = setTimeout(() => controller.abort(), 90000); 
 
         try {
-            // Chat Generation can still happen Client-side (hitting central Ollama) OR move to server.
-            // Keeping it client-side for now to use the existing Ollama config in settings.
-            const response = await fetch(`${settings.ollamaBaseUrl}/chat/completions`, {
+            // --- UPDATED: Use Server Proxy for Chat Generation ---
+            // This avoids CORS issues and ensures requests go through the central server
+            const response = await fetch(`${settings.serverUrl}/chat`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
@@ -114,7 +109,8 @@ export const processQuery = async (
             clearTimeout(timeoutId);
 
             if (!response.ok) {
-                throw new Error(`API Error ${response.status}: ${response.statusText}`);
+                const errText = await response.text();
+                throw new Error(`API Error ${response.status}: ${errText}`);
             }
 
             const data = await response.json();

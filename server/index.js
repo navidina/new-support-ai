@@ -6,28 +6,31 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3001; // Running on port 3001 to avoid conflict with React (3000)
+const PORT = 3001; 
 
 // Configuration
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-const EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5@q4_k_m'; // Ensure this matches your Ollama model
-const DB_PATH = path.join(__dirname, 'data/rayan-db');
+const EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5@q4_k_m'; 
+const DB_PATH = path.join(__dirname, 'data', 'rayan-db');
 
 app.use(cors());
-app.use(express.json({ limit: '100mb' })); // Increase limit for large file uploads
+app.use(express.json({ limit: '100mb' }));
 
 // --- DATABASE INIT ---
 let db;
 let table;
 
 async function initDB() {
-    if (!fs.existsSync(DB_PATH)) {
-        fs.mkdirSync(DB_PATH, { recursive: true });
+    // Ensure data directory exists
+    const dataDir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
     }
+    
+    // Connect to LanceDB
     db = await lancedb.connect(DB_PATH);
     console.log(`📂 LanceDB connected at ${DB_PATH}`);
     
-    // Check if table exists, create if not (Logic handled in ingestion)
     try {
         table = await db.openTable('knowledge_chunks');
         console.log('✅ Table "knowledge_chunks" loaded.');
@@ -38,7 +41,6 @@ async function initDB() {
 
 // --- HELPER FUNCTIONS ---
 
-// 1. Server-side Embedding
 async function getEmbedding(text) {
     try {
         const response = await fetch(`${OLLAMA_URL}/api/embeddings`, {
@@ -49,15 +51,20 @@ async function getEmbedding(text) {
                 prompt: text
             })
         });
+        
+        if (!response.ok) {
+            console.error(`Ollama Embedding Error: ${response.status} ${response.statusText}`);
+            return null;
+        }
+
         const data = await response.json();
         return data.embedding;
     } catch (error) {
-        console.error("Embedding Error:", error.message);
+        console.error("Embedding Connection Error:", error.message);
         return null;
     }
 }
 
-// 2. Keyword Scoring Logic (Ported from reranker.ts)
 const normalize = (text) => {
     return text.toLowerCase()
         .replace(/[.,/#!$%^&*;:{}=\-_`~()؟،«»"']/g, " ")
@@ -77,36 +84,21 @@ const calculateKeywordScore = (query, content) => {
     if (queryTokens.length === 0) return 0;
 
     let score = 0;
-    
-    // Bigram
-    let matchedBigrams = 0;
-    for (let i = 0; i < queryTokens.length - 1; i++) {
-        const bigram = `${queryTokens[i]} ${queryTokens[i+1]}`;
-        if (normContent.includes(bigram)) {
-            matchedBigrams++;
-            score += 0.3;
-        }
-    }
-
-    // Tokens
     let matchedTokens = 0;
+    
     queryTokens.forEach(token => {
         if (normContent.includes(token)) {
             matchedTokens++;
-            const count = normContent.split(token).length - 1;
-            score += Math.min(count, 3) * 0.05;
+            score += 0.1;
         }
     });
 
-    score += (matchedTokens / queryTokens.length) * 0.4;
-    if (matchedTokens === queryTokens.length) score += 0.2;
-
+    score += (matchedTokens / queryTokens.length) * 0.5;
     return Math.min(1.0, score);
 };
 
 // --- API ROUTES ---
 
-// 1. Ingestion Endpoint
 app.post('/api/ingest', async (req, res) => {
     try {
         const { chunks } = req.body;
@@ -116,16 +108,15 @@ app.post('/api/ingest', async (req, res) => {
 
         console.log(`📥 Receiving ${chunks.length} chunks...`);
 
-        // Generate embeddings server-side
         const processedChunks = [];
         for (const chunk of chunks) {
             const vector = await getEmbedding(chunk.searchContent || chunk.content);
             if (vector) {
                 processedChunks.push({
                     id: chunk.id,
-                    vector: vector, // LanceDB expects 'vector' field by default or configured
+                    vector: vector,
                     content: chunk.content,
-                    metadata: JSON.stringify(chunk.metadata), // Flat structure for LanceDB
+                    metadata: JSON.stringify(chunk.metadata),
                     source_id: chunk.source.id,
                     source_json: JSON.stringify(chunk.source),
                     created_at: Date.now()
@@ -134,17 +125,16 @@ app.post('/api/ingest', async (req, res) => {
         }
 
         if (processedChunks.length === 0) {
-            return res.status(500).json({ error: 'Failed to generate embeddings' });
+            return res.status(500).json({ error: 'Failed to generate embeddings. Check Ollama.' });
         }
 
         if (!table) {
-            // Create table with the first batch
             table = await db.createTable('knowledge_chunks', processedChunks);
         } else {
             await table.add(processedChunks);
         }
 
-        console.log(`✅ Indexed ${processedChunks.length} chunks into LanceDB.`);
+        console.log(`✅ Indexed ${processedChunks.length} chunks.`);
         res.json({ success: true, count: processedChunks.length });
 
     } catch (e) {
@@ -153,40 +143,29 @@ app.post('/api/ingest', async (req, res) => {
     }
 });
 
-// 2. Search Endpoint (Hybrid)
 app.post('/api/search', async (req, res) => {
     try {
         const { query, categoryFilter, vectorWeight = 0.35, topK = 20 } = req.body;
         
-        if (!table) {
-            return res.json([]); // No data yet
-        }
+        if (!table) return res.json([]);
 
         const queryVector = await getEmbedding(query);
         if (!queryVector) {
             return res.status(500).json({ error: 'Embedding failed' });
         }
 
-        // Vector Search via LanceDB
         let results = await table.search(queryVector)
-            .limit(50) // Fetch more candidates for re-ranking
+            .limit(50) 
             .execute();
 
-        // Client-side mapping & Hybrid Reranking (running on Node.js)
         const rankedResults = results.map(r => {
             const metadata = JSON.parse(r.metadata);
             
-            // Filter logic (Software filtering since LanceDB SQL filter on JSON string is complex)
             if (categoryFilter && metadata.category !== categoryFilter) {
                 return null;
             }
 
-            // LanceDB returns distance (lower is better). Convert to similarity (approx 1 - distance/2 for cosine)
-            // Note: LanceDB default metric is L2 or Cosine. Assuming Cosine distance (0..2).
-            // Let's assume we want a normalized 0..1 score.
-            // Simplified: vectorScore approx 1 - r._distance (if metric is cosine distance)
             const vectorScore = 1 - (r._distance || 0); 
-
             const keywordScore = calculateKeywordScore(query, r.content);
             const hybridScore = (vectorScore * vectorWeight) + (keywordScore * (1 - vectorWeight));
 
@@ -197,12 +176,11 @@ app.post('/api/search', async (req, res) => {
                 score: hybridScore,
                 vectorScore,
                 keywordScore,
-                // Add hybrid score for UI
                 rerankScore: hybridScore
             };
         })
-        .filter(r => r !== null) // Remove filtered items
-        .sort((a, b) => b.score - a.score) // Sort by Hybrid Score
+        .filter(r => r !== null) 
+        .sort((a, b) => b.score - a.score) 
         .slice(0, topK);
 
         res.json(rankedResults);
@@ -213,7 +191,6 @@ app.post('/api/search', async (req, res) => {
     }
 });
 
-// 3. Stats Endpoint
 app.get('/api/stats', async (req, res) => {
     try {
         if (!table) return res.json({ count: 0 });
@@ -224,7 +201,27 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-// 4. Reset DB
+app.post('/api/chat', async (req, res) => {
+    try {
+        const response = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Ollama Error: ${err}`);
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        console.error("Chat Proxy Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/reset', async (req, res) => {
     try {
         if (table) {
@@ -237,7 +234,6 @@ app.post('/api/reset', async (req, res) => {
     }
 });
 
-// Start Server
 initDB().then(() => {
     app.listen(PORT, () => {
         console.log(`🚀 Central RAG Server running on http://localhost:${PORT}`);
