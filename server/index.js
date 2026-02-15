@@ -46,7 +46,6 @@ async function initDB() {
 // --- HELPER FUNCTIONS ---
 
 function getEmbeddingEndpoint(baseUrl) {
-    // Ensure no trailing slash
     const cleanUrl = baseUrl.replace(/\/$/, '');
     if (cleanUrl.endsWith('/v1')) {
         return `${cleanUrl}/embeddings`; 
@@ -82,8 +81,6 @@ async function getEmbedding(text, config = {}) {
         return data.embedding || (data.data && data.data[0] ? data.data[0].embedding : null);
     } catch (error) {
         console.error(`Embedding Connection Error to ${endpoint}:`, error.message);
-        // Pass the specific error up via a property if needed, but for now returning null causes the 500 later.
-        // We log it here so the server console is useful.
         return null;
     }
 }
@@ -153,7 +150,7 @@ app.post('/api/ingest', async (req, res) => {
 
         if (processedChunks.length === 0) {
             const msg = errorCount > 0 
-                ? `Ollama Connection Failed. Could not generate embeddings for any of the ${chunks.length} chunks. Check server console for network details.` 
+                ? `Ollama Connection Failed. Could not generate embeddings for any of the ${chunks.length} chunks. Check server console.` 
                 : 'No chunks were successfully processed.';
             return res.status(500).json({ error: msg });
         }
@@ -165,8 +162,12 @@ app.post('/api/ingest', async (req, res) => {
                 await table.add(processedChunks);
             } catch (addError) {
                 console.warn("⚠️ Schema Mismatch detected. Recreating table...");
-                await db.dropTable('knowledge_chunks');
-                table = await db.createTable('knowledge_chunks', processedChunks);
+                try {
+                    await db.dropTable('knowledge_chunks');
+                    table = await db.createTable('knowledge_chunks', processedChunks);
+                } catch (recreateError) {
+                    throw new Error("Failed to recreate table: " + recreateError.message);
+                }
             }
         }
 
@@ -194,7 +195,10 @@ app.post('/api/search', async (req, res) => {
             .limit(50) 
             .execute();
 
-        const rankedResults = results.map(r => {
+        // Safety check for results
+        const safeResults = Array.isArray(results) ? results : (Array.from(results) || []);
+
+        const rankedResults = safeResults.map(r => {
             const metadata = r.metadata ? JSON.parse(r.metadata) : {};
             
             if (categoryFilter && metadata.category !== categoryFilter) {
@@ -240,15 +244,30 @@ app.get('/api/stats', async (req, res) => {
 app.get('/api/chunks', async (req, res) => {
     try {
         if (!table) return res.json([]);
-        const results = await table.query().limit(20000).execute();
-        const sanitized = results.map(r => {
+        
+        const results = await table.query().limit(50000).execute();
+        
+        let safeResults = results;
+        if (!Array.isArray(results)) {
+             // console.warn("⚠️ Warning: Query results is not an array. Attempting conversion...");
+             // Attempt safe conversion for different LanceDB versions
+             if (results && typeof results.toArray === 'function') {
+                 safeResults = await results.toArray();
+             } else if (results && Array.isArray(results.data)) {
+                 safeResults = results.data;
+             } else {
+                 safeResults = Array.from(results) || [];
+             }
+        }
+
+        const sanitized = safeResults.map(r => {
             const { vector, ...rest } = r || {};
             return rest;
         });
         res.json(sanitized);
     } catch (e) {
-        console.error("Fetch Chunks Error:", e.message);
-        res.json([]);
+        console.error("Fetch Chunks Error:", e);
+        res.json([]); // Return empty array to prevent frontend crash
     }
 });
 
@@ -257,7 +276,6 @@ app.post('/api/chat', async (req, res) => {
         const { configuration, ...chatBody } = req.body;
         const baseUrl = configuration?.ollamaBaseUrl || DEFAULT_OLLAMA_URL;
         
-        // Ensure no trailing slash for endpoint construction
         const cleanUrl = baseUrl.replace(/\/$/, '');
         const endpoint = cleanUrl.endsWith('/v1') 
             ? `${cleanUrl}/chat/completions` 
