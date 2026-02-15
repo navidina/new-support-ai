@@ -31,21 +31,25 @@ async function initDB() {
     console.log(`📂 LanceDB connected at ${DB_PATH}`);
     
     try {
-        table = await db.openTable('knowledge_chunks');
-        console.log('✅ Table "knowledge_chunks" loaded.');
+        const tableNames = await db.tableNames();
+        if (tableNames.includes('knowledge_chunks')) {
+            table = await db.openTable('knowledge_chunks');
+            console.log('✅ Table "knowledge_chunks" loaded.');
+        } else {
+            console.log('ℹ️ Table "knowledge_chunks" does not exist yet.');
+        }
     } catch (e) {
-        console.log('ℹ️ Table "knowledge_chunks" does not exist yet. Will be created on first ingestion.');
+        console.error('⚠️ DB Init Warning:', e.message);
     }
 }
 
 // --- HELPER FUNCTIONS ---
 
-// Construct the correct embedding endpoint based on the base URL
 function getEmbeddingEndpoint(baseUrl) {
     if (baseUrl.endsWith('/v1')) {
-        return `${baseUrl}/embeddings`; // OpenAI Compatible
+        return `${baseUrl}/embeddings`; 
     }
-    return `${baseUrl}/api/embeddings`; // Standard Ollama
+    return `${baseUrl}/api/embeddings`; 
 }
 
 async function getEmbedding(text, config = {}) {
@@ -54,7 +58,6 @@ async function getEmbedding(text, config = {}) {
     const endpoint = getEmbeddingEndpoint(baseUrl);
 
     try {
-        // Handle OpenAI format vs Ollama format
         let body;
         if (baseUrl.endsWith('/v1')) {
             body = { model: model, input: text };
@@ -74,7 +77,6 @@ async function getEmbedding(text, config = {}) {
         }
 
         const data = await response.json();
-        // Support both formats
         return data.embedding || (data.data && data.data[0] ? data.data[0].embedding : null);
     } catch (error) {
         console.error("Embedding Connection Error:", error.message);
@@ -128,7 +130,7 @@ app.post('/api/ingest', async (req, res) => {
         const processedChunks = [];
         for (const chunk of chunks) {
             const vector = await getEmbedding(chunk.searchContent || chunk.content, configuration);
-            if (vector) {
+            if (vector && Array.isArray(vector) && vector.length > 0) {
                 processedChunks.push({
                     id: chunk.id,
                     vector: vector,
@@ -146,9 +148,19 @@ app.post('/api/ingest', async (req, res) => {
         }
 
         if (!table) {
+            // First run, create table
             table = await db.createTable('knowledge_chunks', processedChunks);
         } else {
-            await table.add(processedChunks);
+            // Check if vectors match existing table schema logic implicitly
+            try {
+                await table.add(processedChunks);
+            } catch (addError) {
+                console.warn("⚠️ Schema Mismatch detected (Embedding Dimension changed?). Recreating table...");
+                // Drop and Recreate
+                await db.dropTable('knowledge_chunks');
+                table = await db.createTable('knowledge_chunks', processedChunks);
+                console.log("♻️ Table recreated with new schema.");
+            }
         }
 
         console.log(`✅ Indexed ${processedChunks.length} chunks.`);
@@ -168,6 +180,7 @@ app.post('/api/search', async (req, res) => {
 
         const queryVector = await getEmbedding(query, configuration);
         if (!queryVector) {
+            // Fallback if embedding fails: return empty or try keyword search if lancedb supported full text (it doesn't natively mix easily without vector)
             return res.status(500).json({ error: 'Embedding failed. Check Ollama URL.' });
         }
 
@@ -176,7 +189,7 @@ app.post('/api/search', async (req, res) => {
             .execute();
 
         const rankedResults = results.map(r => {
-            const metadata = JSON.parse(r.metadata);
+            const metadata = r.metadata ? JSON.parse(r.metadata) : {};
             
             if (categoryFilter && metadata.category !== categoryFilter) {
                 return null;
@@ -189,7 +202,7 @@ app.post('/api/search', async (req, res) => {
             return {
                 ...r,
                 metadata,
-                source: JSON.parse(r.source_json),
+                source: r.source_json ? JSON.parse(r.source_json) : {},
                 score: hybridScore,
                 vectorScore,
                 keywordScore,
@@ -214,28 +227,29 @@ app.get('/api/stats', async (req, res) => {
         const count = await table.countRows();
         res.json({ count });
     } catch (e) {
+        // If countRows fails, maybe table is corrupt or not init. Return 0.
         res.json({ count: 0 });
     }
 });
 
-// NEW: Retrieve all chunks (without vectors) for Graph/Wiki
 app.get('/api/chunks', async (req, res) => {
     try {
         if (!table) return res.json([]);
-        // Fetch chunks. Limit set high for local use. 
-        // Note: For very large datasets, pagination would be needed.
-        const results = await table.query().limit(50000).execute();
         
-        // Strip heavy vectors to reduce bandwidth
+        // Fetch chunks safely.
+        const results = await table.query().limit(20000).execute();
+        
         const sanitized = results.map(r => {
-            const { vector, ...rest } = r; 
+            // Defensive coding against missing fields
+            const { vector, ...rest } = r || {};
             return rest;
         });
         
         res.json(sanitized);
     } catch (e) {
-        console.error("Fetch Chunks Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error("Fetch Chunks Error (Safe Fallback):", e.message);
+        // Do NOT return 500, return empty array to keep frontend alive
+        res.json([]);
     }
 });
 
@@ -270,9 +284,17 @@ app.post('/api/chat', async (req, res) => {
 app.post('/api/reset', async (req, res) => {
     try {
         if (table) {
-            await db.dropTable('knowledge_chunks');
+            try { await db.dropTable('knowledge_chunks'); } catch(e) {}
             table = null;
         }
+        // Force clean directory if needed
+        const fs = require('fs');
+        if (fs.existsSync(DB_PATH)) {
+             fs.rmSync(DB_PATH, { recursive: true, force: true });
+             fs.mkdirSync(DB_PATH);
+        }
+        // Reconnect
+        await initDB();
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });

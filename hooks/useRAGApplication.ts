@@ -4,23 +4,15 @@ import { Message, DocumentStatus, KnowledgeChunk, Conversation, FineTuningRecord
 import { 
     processQuery, 
     parseFiles, 
-    loadChunksFromDB, 
-    clearDatabase, 
-    exportDatabaseToBlob, 
-    importDatabaseFromJson, 
     saveConversationToDB, 
     loadConversationsFromDB, 
     deleteConversationFromDB, 
     checkOllamaConnection, 
     getSettings,
     loadBenchmarkHistory,
-    saveFineTuningRecord, 
     getFineTuningCount,   
-    exportFineTuningDataset,
     loadTicketsFromDB,
-    saveTicketsToDB,
-    parseTicketFile,
-    clearTicketsDB
+    clearDatabase
 } from '../services/mockBackend';
 
 const INITIAL_MESSAGE: Message = {
@@ -43,7 +35,6 @@ const categoryLabels: Record<string, string> = {
 };
 
 export const useRAGApplication = () => {
-    // --- State ---
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [currentChatId, setCurrentChatId] = useState<string>('new');
@@ -66,12 +57,10 @@ export const useRAGApplication = () => {
     const isDbInitialized = useRef(false);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    // --- Periodic Health Check & Data Sync ---
     useEffect(() => {
         const checkHealth = async () => {
             const ollamaStatus = await checkOllamaConnection();
             setIsOllamaOnline(ollamaStatus);
-            // Only poll server stats if we aren't currently processing files to avoid race conditions
             if (!isProcessing) {
                 await loadServerStats();
             }
@@ -124,8 +113,6 @@ export const useRAGApplication = () => {
         }
     }, [messages, currentChatId]);
 
-    // --- Helpers ---
-
     const loadServerStats = async () => {
         try {
             const settings = getSettings();
@@ -141,7 +128,6 @@ export const useRAGApplication = () => {
                 setServerChunkCount(count);
                 setIsServerOnline(true);
 
-                // If server has data but client is empty, try to fetch
                 setCustomChunks(prev => {
                     if (count > 0 && prev.length === 0) {
                         syncChunksFromServer(settings.serverUrl);
@@ -162,26 +148,27 @@ export const useRAGApplication = () => {
             const res = await fetch(`${serverUrl}/chunks`);
             if (res.ok) {
                 const rows = await res.json();
-                const mappedChunks: KnowledgeChunk[] = rows.map((r: any) => ({
-                    id: r.id,
-                    content: r.content,
-                    searchContent: r.content, 
-                    embedding: [], 
-                    metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : (r.metadata || {}),
-                    source: typeof r.source_json === 'string' ? JSON.parse(r.source_json) : (r.source_json || { id: 'unknown', title: 'unknown' }),
-                    createdAt: r.created_at
-                }));
-                
-                // Only update if we have valid data to prevent clearing local state with empty server response
-                if (mappedChunks.length > 0) {
-                    setCustomChunks(mappedChunks);
-                    updateDocsList(mappedChunks);
+                if (Array.isArray(rows)) {
+                    const mappedChunks: KnowledgeChunk[] = rows.map((r: any) => ({
+                        id: r.id,
+                        content: r.content,
+                        searchContent: r.content, 
+                        embedding: [], 
+                        metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : (r.metadata || {}),
+                        source: typeof r.source_json === 'string' ? JSON.parse(r.source_json) : (r.source_json || { id: 'unknown', title: 'unknown' }),
+                        createdAt: r.created_at
+                    }));
+                    
+                    if (mappedChunks.length > 0) {
+                        setCustomChunks(mappedChunks);
+                        updateDocsList(mappedChunks);
+                    }
                 }
             } else {
-                console.warn(`Sync failed: ${res.statusText}. Ensure server/index.js has /api/chunks route.`);
+                console.warn(`Sync warning: ${res.statusText}. Continuing with local/empty state.`);
             }
         } catch(e) {
-            console.error("Failed to sync chunks", e);
+            console.error("Sync error (non-fatal):", e);
         }
     };
 
@@ -213,8 +200,6 @@ export const useRAGApplication = () => {
         const count = await getFineTuningCount();
         setFineTuningCount(count);
     };
-
-    // --- Actions ---
 
     const performQuery = async (queryText: string, categoryFilter?: string, existingMsgId?: string) => {
         if (!isServerOnline) {
@@ -352,7 +337,6 @@ export const useRAGApplication = () => {
     const handleTicketFileSelected = async (fileList: FileList) => { /* ... */ };
     const handleClearTickets = async () => { /* ... */ };
     
-    // Updated Files Selected Handler (Uses local data immediately)
     const handleFilesSelected = async (fileList: FileList) => {
         if (!isServerOnline) {
             alert("خطا: سرور مرکزی در دسترس نیست.");
@@ -364,7 +348,6 @@ export const useRAGApplication = () => {
         
         abortControllerRef.current = new AbortController();
         try {
-            // parseFiles now returns the processed chunks (even though it also sends them to server)
             const extractedChunks = await parseFiles(
                 fileList, 
                 (fileName, step, info) => {
@@ -374,7 +357,6 @@ export const useRAGApplication = () => {
                 abortControllerRef.current.signal 
             );
             
-            // IMPORTANT: Update local state immediately with valid chunks
             if (extractedChunks.length > 0) {
                 setCustomChunks(prev => [...prev, ...extractedChunks]);
                 updateDocsList([...customChunks, ...extractedChunks]);
