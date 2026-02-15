@@ -53,7 +53,6 @@ export const useRAGApplication = () => {
     const [isDbLoading, setIsDbLoading] = useState(true);
     const [processingStatus, setProcessingStatus] = useState<string>('');
     
-    // IMPORTANT: Initialize as empty array, DO NOT fill with empty objects
     const [customChunks, setCustomChunks] = useState<KnowledgeChunk[]>([]);
     const [ticketChunks, setTicketChunks] = useState<KnowledgeChunk[]>([]); 
     const [docsList, setDocsList] = useState<DocumentStatus[]>([]);
@@ -72,12 +71,15 @@ export const useRAGApplication = () => {
         const checkHealth = async () => {
             const ollamaStatus = await checkOllamaConnection();
             setIsOllamaOnline(ollamaStatus);
-            await loadServerStats();
+            // Only poll server stats if we aren't currently processing files to avoid race conditions
+            if (!isProcessing) {
+                await loadServerStats();
+            }
         };
         checkHealth();
-        const interval = setInterval(checkHealth, 10000); // Check every 10s
+        const interval = setInterval(checkHealth, 10000); 
         return () => clearInterval(interval);
-    }, []);
+    }, [isProcessing]);
 
     useEffect(() => {
         if (isDbInitialized.current) return;
@@ -85,12 +87,10 @@ export const useRAGApplication = () => {
 
         const initSystem = async () => {
             try {
-                // Load Local Tickets
                 const savedTickets = await loadTicketsFromDB();
                 if (savedTickets.length > 0) {
                     setTicketChunks(savedTickets);
                 }
-
                 await loadHistory();
                 await loadBenchmarkStats();
                 await updateFineTuningCount(); 
@@ -129,7 +129,6 @@ export const useRAGApplication = () => {
     const loadServerStats = async () => {
         try {
             const settings = getSettings();
-            // Longer timeout for stats/data sync
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000); 
             
@@ -142,12 +141,11 @@ export const useRAGApplication = () => {
                 setServerChunkCount(count);
                 setIsServerOnline(true);
 
-                // If server has data but we haven't loaded it into client state yet, fetch it.
-                // We use state functional update to check current length to avoid stale closures
+                // If server has data but client is empty, try to fetch
                 setCustomChunks(prev => {
-                    if (count > 0 && prev.length !== count) {
+                    if (count > 0 && prev.length === 0) {
                         syncChunksFromServer(settings.serverUrl);
-                        return prev; // Return current for now, sync will update it later
+                        return prev;
                     }
                     return prev;
                 });
@@ -164,30 +162,37 @@ export const useRAGApplication = () => {
             const res = await fetch(`${serverUrl}/chunks`);
             if (res.ok) {
                 const rows = await res.json();
-                // Map Server DB rows to Frontend KnowledgeChunk type
                 const mappedChunks: KnowledgeChunk[] = rows.map((r: any) => ({
                     id: r.id,
                     content: r.content,
                     searchContent: r.content, 
-                    embedding: [], // Vectors are stripped to save memory
+                    embedding: [], 
                     metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : (r.metadata || {}),
                     source: typeof r.source_json === 'string' ? JSON.parse(r.source_json) : (r.source_json || { id: 'unknown', title: 'unknown' }),
                     createdAt: r.created_at
                 }));
-                setCustomChunks(mappedChunks);
                 
-                // Update docs list based on chunks
-                const files = new Set<string>();
-                mappedChunks.forEach(c => { if(c.source?.id) files.add(c.source.id); });
-                setDocsList(Array.from(files).map(f => ({ 
-                    name: f, 
-                    status: 'indexed', 
-                    chunks: mappedChunks.filter(c => c.source.id === f).length 
-                })));
+                // Only update if we have valid data to prevent clearing local state with empty server response
+                if (mappedChunks.length > 0) {
+                    setCustomChunks(mappedChunks);
+                    updateDocsList(mappedChunks);
+                }
+            } else {
+                console.warn(`Sync failed: ${res.statusText}. Ensure server/index.js has /api/chunks route.`);
             }
         } catch(e) {
             console.error("Failed to sync chunks", e);
         }
+    };
+
+    const updateDocsList = (chunks: KnowledgeChunk[]) => {
+        const files = new Set<string>();
+        chunks.forEach(c => { if(c.source?.id) files.add(c.source.id); });
+        setDocsList(Array.from(files).map(f => ({ 
+            name: f, 
+            status: 'indexed', 
+            chunks: chunks.filter(c => c.source.id === f).length 
+        })));
     };
 
     const loadHistory = async () => {
@@ -251,7 +256,7 @@ export const useRAGApplication = () => {
             const history = messages.filter(m => !m.isThinking && m.id !== 'init-1').slice(-6);
             const response = await processQuery(
                 queryText, 
-                [], // No local chunks (search happens on server)
+                [], 
                 (pipelineData: PipelineData) => {
                     setMessages(prev => prev.map(msg => {
                         if (msg.id === responseMsgId) {
@@ -347,7 +352,7 @@ export const useRAGApplication = () => {
     const handleTicketFileSelected = async (fileList: FileList) => { /* ... */ };
     const handleClearTickets = async () => { /* ... */ };
     
-    // Updated Files Selected Handler (Calls loadServerStats after ingestion)
+    // Updated Files Selected Handler (Uses local data immediately)
     const handleFilesSelected = async (fileList: FileList) => {
         if (!isServerOnline) {
             alert("خطا: سرور مرکزی در دسترس نیست.");
@@ -359,6 +364,7 @@ export const useRAGApplication = () => {
         
         abortControllerRef.current = new AbortController();
         try {
+            // parseFiles now returns the processed chunks (even though it also sends them to server)
             const extractedChunks = await parseFiles(
                 fileList, 
                 (fileName, step, info) => {
@@ -367,7 +373,14 @@ export const useRAGApplication = () => {
                 },
                 abortControllerRef.current.signal 
             );
-            await loadServerStats(); // Update count and fetch new data
+            
+            // IMPORTANT: Update local state immediately with valid chunks
+            if (extractedChunks.length > 0) {
+                setCustomChunks(prev => [...prev, ...extractedChunks]);
+                updateDocsList([...customChunks, ...extractedChunks]);
+                setServerChunkCount(prev => prev + extractedChunks.length);
+            }
+
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
                 role: 'system',
@@ -409,7 +422,7 @@ export const useRAGApplication = () => {
             processingType,
             isDbLoading,
             processingStatus,
-            customChunks, // Now contains real data
+            customChunks, 
             ticketChunks,
             docsList,
             isOllamaOnline,
