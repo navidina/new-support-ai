@@ -1,4 +1,3 @@
-
 const express = require('express');
 const cors = require('cors');
 const lancedb = require('@lancedb/lancedb');
