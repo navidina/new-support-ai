@@ -1,18 +1,19 @@
 
 export interface AppSettings {
+  serverUrl: string; // New field for Central Server URL
   ollamaBaseUrl: string;
   chatModel: string;
   embeddingModel: string;
-  rerankerModel: string; // New field for Reranker configuration
-  enableReranker: boolean; // Toggle for Reranker
+  rerankerModel: string; 
+  enableReranker: boolean; 
   chunkSize: number;
   childChunkSize: number;
   chunkOverlap: number;
   temperature: number;
   systemPrompt: string;
   minConfidence: number;
-  vectorWeight: number; // Added for Auto-Tuner persistence
-  theme: 'light' | 'dark'; // Added Theme preference
+  vectorWeight: number; 
+  theme: 'light' | 'dark'; 
 }
 
 export interface BaseDocument {

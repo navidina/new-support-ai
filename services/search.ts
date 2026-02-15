@@ -1,9 +1,7 @@
 
-import { getEmbedding, cosineSimilarity } from './ollama';
 import { getSettings } from './settings';
 import { PERSIAN_SYNONYMS } from './synonymsData';
 import { cleanAndNormalizeText } from './textProcessor'; 
-import { calculateKeywordScore } from './reranker'; // Imported explicitly
 import { SearchOverrides } from '../types';
 
 const SUPPORT_ADVISOR_PROMPT = `
@@ -29,7 +27,8 @@ const expandQueryWithSynonyms = (query: string) => {
 
 export const processQuery = async (
     query: string,
-    knowledgeBase: any[],
+    // KnowledgeBase is unused in Central mode
+    _unused_knowledgeBase: any[],
     onProgress: any,
     categoryFilter?: string,
     temperatureOverride?: number, 
@@ -54,65 +53,47 @@ export const processQuery = async (
 
     try {
         const expandedQuery = expandQueryWithSynonyms(query);
-        onProgress?.({ step: 'vectorizing', expandedQuery });
+        onProgress?.({ step: 'searching', expandedQuery });
         
-        const queryVec = await getEmbedding(expandedQuery, true);
-
-        // --- TRUE HYBRID SEARCH LOGIC ---
-        // Instead of filtering by vector score first, we calculate hybrid score for ALL candidates immediately.
-        // This ensures a document with 0.2 vector score but 1.0 keyword score doesn't get filtered out.
+        // --- CENTRALIZED SEARCH ---
+        // Send query to Node.js/LanceDB Server
         
-        onProgress?.({ step: 'searching' });
+        let topChunks = [];
+        try {
+            const searchResponse = await fetch(`${settings.serverUrl}/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: expandedQuery,
+                    categoryFilter,
+                    vectorWeight: settings.vectorWeight,
+                    topK: 8 // Get top 8 results
+                })
+            });
 
-        const scored = knowledgeBase
-            .filter(k => !categoryFilter || k.metadata?.category === categoryFilter)
-            .map(chunk => {
-                const vectorScore = chunk.embedding ? cosineSimilarity(queryVec, chunk.embedding) : 0;
-                
-                // Calculate keyword score immediately (Lightweight operation)
-                const keywordScore = calculateKeywordScore(expandedQuery, chunk.content);
-                
-                // Hybrid Score Formula: (Vector * Weight) + (Keyword * (1 - Weight))
-                // Default settings: Vector=0.35, Keyword=0.65 (Favors exact matches)
-                const hybridScore = (vectorScore * settings.vectorWeight) + (keywordScore * (1.0 - settings.vectorWeight));
+            if (!searchResponse.ok) throw new Error("Server Search Failed");
+            topChunks = await searchResponse.json();
+        } catch (serverErr) {
+            console.error("Central Search Failed:", serverErr);
+            throw new Error("خطا در ارتباط با سرور دانش مرکزی. لطفاً اتصال سرور را بررسی کنید.");
+        }
 
-                return {
-                    chunk,
-                    score: hybridScore, 
-                    vectorScore, 
-                    keywordScore,
-                    // Attach explicit hybrid score for UI visualization
-                    rerankScore: hybridScore 
-                };
-            })
-            // Loose filter to remove absolute noise (e.g., score < 0.15)
-            // We use a lower threshold than settings.minConfidence to ensure high-recall first pass
-            .filter(item => item.score >= 0.15) 
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 25); // Take top 25 candidates
-
-        // Since we already calculated hybrid scores, "Reranking" is effectively done.
-        // However, if we want to simulate the pipeline visual or do extra logic, we can keep the variable name.
-        const topChunks = scored.map(s => ({
-            ...s.chunk,
-            rerankScore: s.score,
-            debug: { vector: s.vectorScore, keyword: s.keywordScore }
-        }));
-        
         if (topChunks.length === 0) {
-            return { text: "اطلاعاتی با اطمینان کافی یافت نشد.", sources: [], isAmbiguous: false, options: [] };
+            return { text: "اطلاعاتی با اطمینان کافی در سرور یافت نشد.", sources: [], isAmbiguous: false, options: [] };
         }
 
         onProgress?.({ step: 'generating' });
         
-        // Include Score in context for the LLM to know confidence
-        const context = topChunks.map(c => `[سند: ${c.source.id} (Score: ${c.rerankScore?.toFixed(2)})]\n${c.content}`).join('\n\n---\n\n');
+        // Include Score in context for the LLM
+        const context = topChunks.map(c => `[سند: ${c.source.id} (Score: ${c.score?.toFixed(2)})]\n${c.content}`).join('\n\n---\n\n');
         const systemInstruction = isAdvisorMode ? SUPPORT_ADVISOR_PROMPT : settings.systemPrompt;
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s Timeout
 
         try {
+            // Chat Generation can still happen Client-side (hitting central Ollama) OR move to server.
+            // Keeping it client-side for now to use the existing Ollama config in settings.
             const response = await fetch(`${settings.ollamaBaseUrl}/chat/completions`, {
                 method: 'POST',
                 headers: { 
@@ -145,10 +126,10 @@ export const processQuery = async (
                 isAmbiguous: false,
                 options: [],
                 debugInfo: { 
-                    strategy: searchOverrides.strategyName || (isAdvisorMode ? 'Advisor' : 'TrueHybrid'), 
+                    strategy: 'Centralized-LanceDB', 
                     processingTimeMs: Date.now() - startTime, 
                     candidateCount: topChunks.length, 
-                    logicStep: `Hybrid(V:${settings.vectorWeight})`, 
+                    logicStep: `Server-Hybrid(V:${settings.vectorWeight})`, 
                     extractedKeywords: [] 
                 }
             };
@@ -156,9 +137,9 @@ export const processQuery = async (
             const fetchError = err as any; 
             clearTimeout(timeoutId);
             if (fetchError.name === 'AbortError') {
-                throw new Error("تایم‌اوت ارتباط با مدل. لطفاً بررسی کنید LM Studio در حال اجرا باشد.");
+                throw new Error("تایم‌اوت ارتباط با مدل.");
             }
-            if (fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('Connection refused')) {
+            if (fetchError.message?.includes('Failed to fetch')) {
                 throw new Error("OLLAMA_CONNECTION_REFUSED");
             }
             throw fetchError;
@@ -172,7 +153,7 @@ export const processQuery = async (
         }
 
         return { 
-            text: `خطا در پردازش هوش مصنوعی: ${error.message}`, 
+            text: `خطا در پردازش: ${error.message}`, 
             sources: [], 
             error: error.message,
             isAmbiguous: false,
