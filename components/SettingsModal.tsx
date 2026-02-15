@@ -61,16 +61,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }));
     };
 
-    const handleSave = () => {
-        // Ensure URLs don't have trailing slashes for consistency
-        const cleanData = { ...formData };
-        if (cleanData.serverUrl.endsWith('/')) cleanData.serverUrl = cleanData.serverUrl.slice(0, -1);
-        if (cleanData.ollamaBaseUrl.endsWith('/')) cleanData.ollamaBaseUrl = cleanData.ollamaBaseUrl.slice(0, -1);
+    const handleSave = (e?: React.MouseEvent) => {
+        e?.preventDefault(); // Prevent form submission issues
         
-        updateSettings(cleanData);
-        onClose();
-        // Force reload to apply critical network settings
-        window.location.reload();
+        try {
+            // Ensure URLs don't have trailing slashes for consistency
+            const cleanData = { ...formData };
+            if (cleanData.serverUrl) cleanData.serverUrl = cleanData.serverUrl.replace(/\/$/, '');
+            if (cleanData.ollamaBaseUrl) cleanData.ollamaBaseUrl = cleanData.ollamaBaseUrl.replace(/\/$/, '');
+            
+            console.log('Saving Settings:', cleanData);
+            updateSettings(cleanData);
+            onClose();
+            
+            // Force reload to apply critical network settings
+            // Small delay to ensure localStorage write completes
+            setTimeout(() => {
+                window.location.reload();
+            }, 100);
+        } catch (error) {
+            console.error("Failed to save settings:", error);
+            alert("خطا در ذخیره تنظیمات. لطفاً کنسول را بررسی کنید.");
+        }
     };
 
     if (!isOpen) return null;
