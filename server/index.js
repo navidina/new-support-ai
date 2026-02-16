@@ -63,7 +63,6 @@ async function getEmbedding(text, config = {}) {
     const model = config.embeddingModel || DEFAULT_EMBEDDING_MODEL;
     const endpoint = getEmbeddingEndpoint(baseUrl);
 
-    // Basic cleaning to prevent JSON errors
     const safeText = text.replace(/[\u0000-\u001F]/g, "");
 
     try {
@@ -148,7 +147,6 @@ app.post('/api/ingest', async (req, res) => {
         const processedChunks = [];
         let errorCount = 0;
 
-        // Process in batches to verify progress
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             const vector = await getEmbedding(chunk.searchContent || chunk.content, configuration);
@@ -264,8 +262,7 @@ app.get('/api/chunks', async (req, res) => {
     console.log("⚡ [API] GET /api/chunks called");
     try {
         if (!table) {
-            console.warn("⚠️ [API] Table variable is null/undefined");
-            // Try to reconnect if null
+            console.warn("⚠️ [API] Table variable is null/undefined. Reconnecting...");
             const tableNames = await db.tableNames();
             if (tableNames.includes('knowledge_chunks')) {
                 table = await db.openTable('knowledge_chunks');
@@ -288,32 +285,54 @@ app.get('/api/chunks', async (req, res) => {
         
         let rows = [];
 
+        // STRATEGY 1: Is it already an array?
         if (Array.isArray(results)) {
-            // Case 1: Simple Array
+            console.log("✅ [DB] Results is an Array.");
             rows = results;
-        } else if (typeof results.toArray === 'function') {
-            // Case 2: Helper method available (likely requires await)
-            console.log("🔄 Converting results using .toArray()...");
+        } 
+        // STRATEGY 2: Does it have toArray()? (Common in LanceDB)
+        else if (typeof results.toArray === 'function') {
+            console.log("🔄 [DB] Using .toArray()...");
             rows = await results.toArray();
-        } else {
-            // Case 3: Async Iterator (RecordBatchIterator)
-            console.log("🔄 Iterating over results...");
+        } 
+        // STRATEGY 3: Async Iterator (for await...of)
+        else if (results != null && typeof results[Symbol.asyncIterator] === 'function') {
+            console.log("🔄 [DB] Using Async Iterator...");
             for await (const batch of results) {
-                // Check if batch itself is an array or needs unpacking
-                if (Array.isArray(batch)) {
-                    rows.push(...batch);
-                } else {
-                    rows.push(batch);
-                }
+                if (Array.isArray(batch)) rows.push(...batch);
+                else if (batch && typeof batch.toArray === 'function') rows.push(...batch.toArray());
+                else if (batch && typeof batch.toJSON === 'function') rows.push(...batch.toJSON());
+                else rows.push(batch);
             }
+        } 
+        // STRATEGY 4: Sync Iterator (for...of) - This is likely what RecordBatchIterator is in this version
+        else if (results != null && typeof results[Symbol.iterator] === 'function') {
+            console.log("🔄 [DB] Using Sync Iterator...");
+            for (const batch of results) {
+                if (Array.isArray(batch)) rows.push(...batch);
+                else if (batch && typeof batch.toArray === 'function') rows.push(...batch.toArray());
+                else if (batch && typeof batch.toJSON === 'function') rows.push(...batch.toJSON());
+                else rows.push(batch);
+            }
+        } 
+        // FALLBACK
+        else {
+            console.warn("⚠️ [DB] Unknown result type. Attempting naive push.", typeof results);
+            rows.push(results);
         }
 
         console.log(`📦 [DB] Fetched ${rows.length} rows. Mapping to clean JSON...`);
 
         const sanitized = rows.map(r => {
             if (!r) return null;
-            const { vector, ...rest } = r;
-            return rest;
+            // Handle different row structures
+            const vector = r.vector || r.values?.vector;
+            const content = r.content || r.values?.content;
+            const rest = r;
+            
+            // Clean up vector to save bandwidth
+            const { vector: _v, ...cleanRest } = rest;
+            return cleanRest;
         }).filter(Boolean);
         
         console.log(`✅ [API] Sending ${sanitized.length} chunks to client.`);
@@ -321,6 +340,7 @@ app.get('/api/chunks', async (req, res) => {
     } catch (e) {
         console.error("❌ [ERROR] Fetch Chunks Critical Failure:");
         console.error(e);
+        // Do not crash the server, return empty array
         res.json([]);
     }
 });
@@ -364,7 +384,7 @@ app.post('/api/reset', async (req, res) => {
             try { await db.dropTable('knowledge_chunks'); } catch(e) {}
             table = null;
         }
-        const fs = require('fs');
+        
         if (fs.existsSync(DB_PATH)) {
              fs.rmSync(DB_PATH, { recursive: true, force: true });
              fs.mkdirSync(DB_PATH);
