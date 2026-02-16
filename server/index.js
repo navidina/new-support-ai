@@ -286,29 +286,31 @@ app.get('/api/chunks', async (req, res) => {
         console.log("⏳ [DB] Executing query().limit(20000).execute()...");
         const results = await table.query().limit(20000).execute();
         
-        console.log(`🔍 [DEBUG] Results Type: ${typeof results}`);
-        console.log(`🔍 [DEBUG] Is Array: ${Array.isArray(results)}`);
-        
-        if (results && !Array.isArray(results)) {
-             console.log(`🔍 [DEBUG] Constructor Name: ${results.constructor ? results.constructor.name : 'Unknown'}`);
-             // Try to convert if it's an iterable but not array
-             if (typeof results.toArray === 'function') {
-                 console.log("🔄 Converting results using .toArray()...");
-                 const arr = results.toArray();
-                 res.json(arr.map(r => { const {vector, ...rest} = r; return rest; }));
-                 return;
-             }
+        let rows = [];
+
+        if (Array.isArray(results)) {
+            // Case 1: Simple Array
+            rows = results;
+        } else if (typeof results.toArray === 'function') {
+            // Case 2: Helper method available (likely requires await)
+            console.log("🔄 Converting results using .toArray()...");
+            rows = await results.toArray();
+        } else {
+            // Case 3: Async Iterator (RecordBatchIterator)
+            console.log("🔄 Iterating over results...");
+            for await (const batch of results) {
+                // Check if batch itself is an array or needs unpacking
+                if (Array.isArray(batch)) {
+                    rows.push(...batch);
+                } else {
+                    rows.push(batch);
+                }
+            }
         }
 
-        if (!Array.isArray(results)) {
-            console.error("❌ [ERROR] 'results' is NOT an array. Aborting map.");
-            return res.json([]);
-        }
+        console.log(`📦 [DB] Fetched ${rows.length} rows. Mapping to clean JSON...`);
 
-        console.log(`📦 [DB] Fetched ${results.length} rows. Mapping to clean JSON...`);
-
-        const sanitized = results.map(r => {
-            // Defensive check for each row
+        const sanitized = rows.map(r => {
             if (!r) return null;
             const { vector, ...rest } = r;
             return rest;
