@@ -211,9 +211,27 @@ app.post('/api/search', async (req, res) => {
             return res.status(500).json({ error: 'Embedding failed. Check Ollama URL.' });
         }
 
-        let results = await table.search(queryVector)
-            .limit(50) 
-            .execute();
+        let results = [];
+        
+        // Attempt search with vectorSearch (modern API) or fallback (deprecated)
+        try {
+            if (typeof table.vectorSearch === 'function') {
+                results = await table.vectorSearch(queryVector)
+                    .limit(50)
+                    .toArray();
+            } else if (typeof table.search === 'function') {
+                // Fallback for older versions
+                results = await table.search(queryVector)
+                    .limit(50)
+                    .execute();
+            } else {
+                console.error("❌ LanceDB method not found: neither vectorSearch nor search exists.");
+                throw new Error("Database search method incompatible.");
+            }
+        } catch (searchErr) {
+            console.error("❌ Search Execution Error:", searchErr);
+            return res.status(500).json({ error: searchErr.message });
+        }
 
         const rankedResults = results.map(r => {
             const metadata = r.metadata ? JSON.parse(r.metadata) : {};
@@ -280,45 +298,21 @@ app.get('/api/chunks', async (req, res) => {
             return res.json([]);
         }
 
-        console.log("⏳ [DB] Executing query().limit(20000).execute()...");
-        const results = await table.query().limit(20000).execute();
+        console.log("⏳ [DB] Executing query().limit(20000).toArray()...");
         
+        // Use toArray() which is the standard way to get array results in newer LanceDB
         let rows = [];
-
-        // STRATEGY 1: Is it already an array?
-        if (Array.isArray(results)) {
-            console.log("✅ [DB] Results is an Array.");
-            rows = results;
-        } 
-        // STRATEGY 2: Does it have toArray()? (Common in LanceDB)
-        else if (typeof results.toArray === 'function') {
-            console.log("🔄 [DB] Using .toArray()...");
-            rows = await results.toArray();
-        } 
-        // STRATEGY 3: Async Iterator (for await...of)
-        else if (results != null && typeof results[Symbol.asyncIterator] === 'function') {
-            console.log("🔄 [DB] Using Async Iterator...");
-            for await (const batch of results) {
-                if (Array.isArray(batch)) rows.push(...batch);
-                else if (batch && typeof batch.toArray === 'function') rows.push(...batch.toArray());
-                else if (batch && typeof batch.toJSON === 'function') rows.push(...batch.toJSON());
-                else rows.push(batch);
+        try {
+            rows = await table.query().limit(20000).toArray();
+        } catch (queryError) {
+            console.error("❌ [DB] Query.toArray() failed. Trying fallback execute()...", queryError.message);
+            // Last resort fallback
+            const execResult = await table.query().limit(20000).execute();
+            if (Array.isArray(execResult)) {
+                rows = execResult;
+            } else {
+                console.error("❌ [DB] Fallback failed. Result is not an array.");
             }
-        } 
-        // STRATEGY 4: Sync Iterator (for...of) - This is likely what RecordBatchIterator is in this version
-        else if (results != null && typeof results[Symbol.iterator] === 'function') {
-            console.log("🔄 [DB] Using Sync Iterator...");
-            for (const batch of results) {
-                if (Array.isArray(batch)) rows.push(...batch);
-                else if (batch && typeof batch.toArray === 'function') rows.push(...batch.toArray());
-                else if (batch && typeof batch.toJSON === 'function') rows.push(...batch.toJSON());
-                else rows.push(batch);
-            }
-        } 
-        // FALLBACK
-        else {
-            console.warn("⚠️ [DB] Unknown result type. Attempting naive push.", typeof results);
-            rows.push(results);
         }
 
         console.log(`📦 [DB] Fetched ${rows.length} rows. Mapping to clean JSON...`);
@@ -340,7 +334,6 @@ app.get('/api/chunks', async (req, res) => {
     } catch (e) {
         console.error("❌ [ERROR] Fetch Chunks Critical Failure:");
         console.error(e);
-        // Do not crash the server, return empty array
         res.json([]);
     }
 });
