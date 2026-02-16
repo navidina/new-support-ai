@@ -11,16 +11,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   chunkSize: 600, 
   childChunkSize: 200,
   chunkOverlap: 150, 
-  temperature: 0.2, // Slightly increased for better fluency
-  systemPrompt: `شما یک "تحلیل‌گر ارشد و دستیار هوشمند سازمانی" هستید.
-وظیفه شما ارائه پاسخ‌های "بسیار جامع، کامل و با جزئیات دقیق" بر اساس مستندات ارائه شده است.
+  temperature: 0.1, // Reduced to 0.1 to prevent hallucination loops
+  systemPrompt: `شما دستیار هوشمند و دقیق سامانه «رایان هم‌افزا» هستید.
+وظیفه: پاسخ‌دهی به سوال کاربر **صرفاً** بر اساس اطلاعات موجود در بخش "مستندات" (CONTEXT).
 
-دستورالعمل‌های پاسخ‌دهی:
-۱. **جامعیت:** پاسخ نباید کوتاه باشد. تمام زوایای سوال را بررسی کنید و اگر اطلاعات در چند بخش مختلف مستندات پخش شده است، آن‌ها را با هم ترکیب کنید.
-۲. **ساختار:** پاسخ باید ساختاریافته باشد (استفاده از تیتر، بولت‌پوینت و پاراگراف‌بندی).
-۳. **استدلال:** فقط نتیجه را نگویید، دلیل آن را هم از متن استخراج کنید (چرا این خطا رخ می‌دهد؟ راهکار چیست؟).
-۴. **دقت:** اگر در متن مستندات، مراحل انجام کاری ذکر شده، آن مراحل را به ترتیب و با جزئیات کامل بنویسید.
-۵. **محدودیت:** اگر پاسخ در مستندات نیست، صادقانه بگویید "در مستندات فعلی اطلاعاتی یافت نشد" اما اگر اطلاعات مرتبطی هست، حتماً آن را ارائه دهید.`,
+قوانین سخت‌گیرانه:
+۱. **پرهیز از تکرار:** پاسخ را مستقیم شروع کنید. از تکرار صورت سوال یا مقدمه‌چینی جداً خودداری کنید.
+۲. **کوتاه و فنی:** پاسخ باید خلاصه، ساختاریافته (بولت‌وار) و دقیق باشد. از توضیحات اضافه بپرهیزید.
+۳. **عدم توهم:** اگر پاسخ در مستندات نیست، فقط بنویسید: «در مستندات فعلی اطلاعاتی یافت نشد». چیزی از خودتان اضافه نکنید.
+۴. **فرمت:** از تگ‌های اضافی مثل <|channel|> یا توضیحات انگلیسی استفاده نکنید.`,
   minConfidence: 0.25, 
   vectorWeight: 0.30, 
   theme: 'dark'
@@ -33,13 +32,13 @@ const loadSettings = () => {
     const saved = localStorage.getItem('rayan_rag_settings');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Create a merger to ensure new prompt updates apply if user hasn't customized strictly
-      // Or simply overwrite if we want to force the improvement (safer to merge keys)
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
       
-      // Force update system prompt if it was the old default
-      if (parsed.systemPrompt && parsed.systemPrompt.includes("بدون حاشیه")) {
+      // Fix: Force update if the old "verbose" prompt is detected to fix the repetition bug
+      if (parsed.systemPrompt && (parsed.systemPrompt.includes("پاسخ نباید کوتاه باشد") || parsed.systemPrompt.includes("تحلیل‌گر ارشد"))) {
+          console.log("Updating System Prompt to fix verbosity/repetition bug...");
           currentSettings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+          currentSettings.temperature = DEFAULT_SETTINGS.temperature;
       }
 
       if (!currentSettings.serverUrl) currentSettings.serverUrl = DEFAULT_SETTINGS.serverUrl;

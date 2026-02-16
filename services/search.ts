@@ -104,7 +104,8 @@ export const processQuery = async (
                     model: settings.chatModel,
                     messages: [
                         { role: 'system', content: systemInstruction },
-                        { role: 'user', content: `CONTEXT (اسناد بازیابی شده):\n${context}\n\nQUESTION (سوال کاربر):\n${query}\n\nدستور: با توجه به اسناد بالا، پاسخی جامع، کامل و دقیق به زبان فارسی ارائه دهید.` }
+                        // Simplified user prompt to prevent repetition loops
+                        { role: 'user', content: `مستندات (CONTEXT):\n${context}\n\nسوال کاربر (QUESTION):\n${query}\n\nپاسخ نهایی (فارسی، خلاصه و بدون تکرار):` }
                     ],
                     temperature: settings.temperature,
                     stream: false,
