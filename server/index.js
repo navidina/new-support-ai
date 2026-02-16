@@ -24,29 +24,33 @@ let table;
 async function initDB() {
     const dataDir = path.dirname(DB_PATH);
     if (!fs.existsSync(dataDir)) {
+        console.log(`📂 Creating data directory: ${dataDir}`);
         fs.mkdirSync(dataDir, { recursive: true });
     }
     
+    console.log(`🔄 Connecting to LanceDB at: ${DB_PATH}`);
     db = await lancedb.connect(DB_PATH);
-    console.log(`📂 LanceDB connected at ${DB_PATH}`);
+    console.log(`✅ LanceDB Connected.`);
     
     try {
         const tableNames = await db.tableNames();
+        console.log(`📋 Existing tables: ${tableNames.join(', ')}`);
+        
         if (tableNames.includes('knowledge_chunks')) {
             table = await db.openTable('knowledge_chunks');
-            console.log('✅ Table "knowledge_chunks" loaded.');
+            const count = await table.countRows();
+            console.log(`✅ Table "knowledge_chunks" loaded. Rows: ${count}`);
         } else {
-            console.log('ℹ️ Table "knowledge_chunks" does not exist yet.');
+            console.log('ℹ️ Table "knowledge_chunks" does not exist yet. It will be created on ingestion.');
         }
     } catch (e) {
-        console.error('⚠️ DB Init Warning:', e.message);
+        console.error('⚠️ DB Init Error:', e);
     }
 }
 
 // --- HELPER FUNCTIONS ---
 
 function getEmbeddingEndpoint(baseUrl) {
-    // Ensure no trailing slash
     const cleanUrl = baseUrl.replace(/\/$/, '');
     if (cleanUrl.endsWith('/v1')) {
         return `${cleanUrl}/embeddings`; 
@@ -59,12 +63,15 @@ async function getEmbedding(text, config = {}) {
     const model = config.embeddingModel || DEFAULT_EMBEDDING_MODEL;
     const endpoint = getEmbeddingEndpoint(baseUrl);
 
+    // Basic cleaning to prevent JSON errors
+    const safeText = text.replace(/[\u0000-\u001F]/g, "");
+
     try {
         let body;
         if (baseUrl.endsWith('/v1')) {
-            body = { model: model, input: text };
+            body = { model: model, input: safeText };
         } else {
-            body = { model: model, prompt: text };
+            body = { model: model, prompt: safeText };
         }
 
         const response = await fetch(endpoint, {
@@ -74,16 +81,20 @@ async function getEmbedding(text, config = {}) {
         });
         
         if (!response.ok) {
-            console.error(`Embedding Error (${response.status}) at ${endpoint}`);
+            const errText = await response.text();
+            console.error(`❌ Embedding API Error (${response.status}) at ${endpoint}: ${errText.substring(0, 100)}...`);
             return null;
         }
 
         const data = await response.json();
-        return data.embedding || (data.data && data.data[0] ? data.data[0].embedding : null);
+        const vector = data.embedding || (data.data && data.data[0] ? data.data[0].embedding : null);
+        
+        if (!vector) {
+            console.warn(`⚠️ Vector missing in response from ${endpoint}`);
+        }
+        return vector;
     } catch (error) {
-        console.error(`Embedding Connection Error to ${endpoint}:`, error.message);
-        // Pass the specific error up via a property if needed, but for now returning null causes the 500 later.
-        // We log it here so the server console is useful.
+        console.error(`❌ Connection Error to ${endpoint}:`, error.message);
         return null;
     }
 }
@@ -123,19 +134,25 @@ const calculateKeywordScore = (query, content) => {
 // --- API ROUTES ---
 
 app.post('/api/ingest', async (req, res) => {
+    console.log("📥 [API] /api/ingest called");
     try {
         const { chunks, configuration } = req.body;
         if (!chunks || !Array.isArray(chunks)) {
+            console.error("❌ Invalid chunks data received");
             return res.status(400).json({ error: 'Invalid chunks data' });
         }
 
-        console.log(`📥 Receiving ${chunks.length} chunks. Config:`, configuration);
+        console.log(`🔄 Processing ${chunks.length} chunks...`);
+        console.log(`⚙️ Config:`, configuration);
 
         const processedChunks = [];
         let errorCount = 0;
 
-        for (const chunk of chunks) {
+        // Process in batches to verify progress
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
             const vector = await getEmbedding(chunk.searchContent || chunk.content, configuration);
+            
             if (vector && Array.isArray(vector) && vector.length > 0) {
                 processedChunks.push({
                     id: chunk.id,
@@ -148,33 +165,39 @@ app.post('/api/ingest', async (req, res) => {
                 });
             } else {
                 errorCount++;
+                if (errorCount === 1) console.error("⚠️ First embedding failure detected. Check Ollama.");
             }
+            
+            if (i % 50 === 0 && i > 0) console.log(`   ...processed ${i}/${chunks.length}`);
         }
 
+        console.log(`📊 Embedding Complete. Success: ${processedChunks.length}, Fail: ${errorCount}`);
+
         if (processedChunks.length === 0) {
-            const msg = errorCount > 0 
-                ? `Ollama Connection Failed. Could not generate embeddings for any of the ${chunks.length} chunks. Check server console for network details.` 
-                : 'No chunks were successfully processed.';
-            return res.status(500).json({ error: msg });
+            return res.status(500).json({ error: 'Ollama Connection Failed. No embeddings generated.' });
         }
 
         if (!table) {
+            console.log("🆕 Creating new table 'knowledge_chunks'...");
             table = await db.createTable('knowledge_chunks', processedChunks);
         } else {
+            console.log("➕ Appending to existing table...");
             try {
                 await table.add(processedChunks);
             } catch (addError) {
-                console.warn("⚠️ Schema Mismatch detected. Recreating table...");
+                console.warn(`⚠️ Schema Mismatch or Add Error: ${addError.message}`);
+                console.log("♻️ Dropping and recreating table...");
                 await db.dropTable('knowledge_chunks');
                 table = await db.createTable('knowledge_chunks', processedChunks);
             }
         }
 
-        console.log(`✅ Indexed ${processedChunks.length} chunks.`);
+        const count = await table.countRows();
+        console.log(`✅ Indexed Successfully. Total rows in DB: ${count}`);
         res.json({ success: true, count: processedChunks.length });
 
     } catch (e) {
-        console.error("Ingestion Error:", e);
+        console.error("❌ Ingestion Critical Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -238,16 +261,64 @@ app.get('/api/stats', async (req, res) => {
 });
 
 app.get('/api/chunks', async (req, res) => {
+    console.log("⚡ [API] GET /api/chunks called");
     try {
-        if (!table) return res.json([]);
+        if (!table) {
+            console.warn("⚠️ [API] Table variable is null/undefined");
+            // Try to reconnect if null
+            const tableNames = await db.tableNames();
+            if (tableNames.includes('knowledge_chunks')) {
+                table = await db.openTable('knowledge_chunks');
+                console.log("🔄 [API] Re-opened table successfully.");
+            } else {
+                console.log("ℹ️ [API] Table does not exist in DB.");
+                return res.json([]);
+            }
+        }
+        
+        const count = await table.countRows();
+        console.log(`ℹ️ [DB] Row count before query: ${count}`);
+
+        if (count === 0) {
+            return res.json([]);
+        }
+
+        console.log("⏳ [DB] Executing query().limit(20000).execute()...");
         const results = await table.query().limit(20000).execute();
+        
+        console.log(`🔍 [DEBUG] Results Type: ${typeof results}`);
+        console.log(`🔍 [DEBUG] Is Array: ${Array.isArray(results)}`);
+        
+        if (results && !Array.isArray(results)) {
+             console.log(`🔍 [DEBUG] Constructor Name: ${results.constructor ? results.constructor.name : 'Unknown'}`);
+             // Try to convert if it's an iterable but not array
+             if (typeof results.toArray === 'function') {
+                 console.log("🔄 Converting results using .toArray()...");
+                 const arr = results.toArray();
+                 res.json(arr.map(r => { const {vector, ...rest} = r; return rest; }));
+                 return;
+             }
+        }
+
+        if (!Array.isArray(results)) {
+            console.error("❌ [ERROR] 'results' is NOT an array. Aborting map.");
+            return res.json([]);
+        }
+
+        console.log(`📦 [DB] Fetched ${results.length} rows. Mapping to clean JSON...`);
+
         const sanitized = results.map(r => {
-            const { vector, ...rest } = r || {};
+            // Defensive check for each row
+            if (!r) return null;
+            const { vector, ...rest } = r;
             return rest;
-        });
+        }).filter(Boolean);
+        
+        console.log(`✅ [API] Sending ${sanitized.length} chunks to client.`);
         res.json(sanitized);
     } catch (e) {
-        console.error("Fetch Chunks Error:", e.message);
+        console.error("❌ [ERROR] Fetch Chunks Critical Failure:");
+        console.error(e);
         res.json([]);
     }
 });
@@ -257,11 +328,12 @@ app.post('/api/chat', async (req, res) => {
         const { configuration, ...chatBody } = req.body;
         const baseUrl = configuration?.ollamaBaseUrl || DEFAULT_OLLAMA_URL;
         
-        // Ensure no trailing slash for endpoint construction
         const cleanUrl = baseUrl.replace(/\/$/, '');
         const endpoint = cleanUrl.endsWith('/v1') 
             ? `${cleanUrl}/chat/completions` 
             : `${cleanUrl}/api/chat`; 
+
+        console.log(`💬 [Chat] Sending request to ${endpoint}`);
 
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -271,6 +343,7 @@ app.post('/api/chat', async (req, res) => {
         
         if (!response.ok) {
             const err = await response.text();
+            console.error(`❌ Chat API Error: ${err}`);
             throw new Error(`AI Provider Error: ${err}`);
         }
 
@@ -283,6 +356,7 @@ app.post('/api/chat', async (req, res) => {
 });
 
 app.post('/api/reset', async (req, res) => {
+    console.log("🧨 [API] Reset called. Wiping DB...");
     try {
         if (table) {
             try { await db.dropTable('knowledge_chunks'); } catch(e) {}
@@ -294,8 +368,10 @@ app.post('/api/reset', async (req, res) => {
              fs.mkdirSync(DB_PATH);
         }
         await initDB();
+        console.log("✅ [API] DB Reset Complete.");
         res.json({ success: true });
     } catch (e) {
+        console.error("Reset Error:", e);
         res.status(500).json({ error: e.message });
     }
 });

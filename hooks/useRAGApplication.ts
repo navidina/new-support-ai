@@ -128,13 +128,12 @@ export const useRAGApplication = () => {
                 setServerChunkCount(count);
                 setIsServerOnline(true);
 
-                setCustomChunks(prev => {
-                    if (count > 0 && prev.length === 0) {
-                        syncChunksFromServer(settings.serverUrl);
-                        return prev;
-                    }
-                    return prev;
-                });
+                // Only sync if we have counts but local is empty (initial load)
+                // Or if counts differ significantly (optional, not implemented to avoid spam)
+                if (count > 0 && customChunks.length === 0) {
+                    console.log(`[Client] Server has ${count} chunks, syncing...`);
+                    syncChunksFromServer(settings.serverUrl);
+                }
             } else {
                 setIsServerOnline(false);
             }
@@ -148,6 +147,8 @@ export const useRAGApplication = () => {
             const res = await fetch(`${serverUrl}/chunks`);
             if (res.ok) {
                 const rows = await res.json();
+                console.log(`[Client] Received ${rows.length} chunks from server.`);
+                
                 if (Array.isArray(rows)) {
                     const mappedChunks: KnowledgeChunk[] = rows.map((r: any) => ({
                         id: r.id,
@@ -162,7 +163,10 @@ export const useRAGApplication = () => {
                     if (mappedChunks.length > 0) {
                         setCustomChunks(mappedChunks);
                         updateDocsList(mappedChunks);
+                        console.log(`[Client] State updated with ${mappedChunks.length} chunks.`);
                     }
+                } else {
+                    console.error("[Client] Sync response is not an array:", rows);
                 }
             } else {
                 console.warn(`Sync warning: ${res.statusText}. Continuing with local/empty state.`);
@@ -358,6 +362,8 @@ export const useRAGApplication = () => {
             );
             
             if (extractedChunks.length > 0) {
+                // IMPORTANT: Append to local state immediately so UI updates
+                // The parseFiles function now returns the chunks (without embeddings) for this purpose
                 setCustomChunks(prev => [...prev, ...extractedChunks]);
                 updateDocsList([...customChunks, ...extractedChunks]);
                 setServerChunkCount(prev => prev + extractedChunks.length);
