@@ -9,7 +9,7 @@ const SUPPORT_ADVISOR_PROMPT = `
 ۱. تحلیل مشکل: ریشه مشکل را بر اساس مستندات حدس بزنید.
 ۲. آدرس‌دهی: بگویید کدام منو یا فایل مرتبط است.
 ۳. راهکار: گام‌های اجرایی برای کارشناس را بنویسید.
-لحن شما خطاب به "همکار پشتیبان" باشد.
+لحن شما خطاب به "همکار پشتیبان" باشد و پاسخ باید کامل و راهگشا باشد.
 `;
 
 const expandQueryWithSynonyms = (query: string) => {
@@ -62,6 +62,7 @@ export const processQuery = async (
         // --- CENTRALIZED SEARCH ---
         let topChunks = [];
         try {
+            // INCREASED TOP_K to 15 for comprehensive context
             const searchResponse = await fetch(`${settings.serverUrl}/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -69,7 +70,7 @@ export const processQuery = async (
                     query: expandedQuery,
                     categoryFilter,
                     vectorWeight: settings.vectorWeight,
-                    topK: 8,
+                    topK: 15, // Increased from 8 to 15 to allow comprehensive answers
                     configuration: serverConfig
                 })
             });
@@ -87,14 +88,13 @@ export const processQuery = async (
 
         onProgress?.({ step: 'generating' });
         
-        const context = topChunks.map(c => `[سند: ${c.source.id} (Score: ${c.score?.toFixed(2)})]\n${c.content}`).join('\n\n---\n\n');
+        const context = topChunks.map(c => `[منبع: ${c.source.id} | امتیاز: ${c.score?.toFixed(2)}]\n${c.content}`).join('\n\n---\n\n');
         const systemInstruction = isAdvisorMode ? SUPPORT_ADVISOR_PROMPT : settings.systemPrompt;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 90000); 
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // Increased timeout for longer generation
 
         try {
-            // --- UPDATED: Use Server Proxy for Chat Generation ---
             const response = await fetch(`${settings.serverUrl}/chat`, {
                 method: 'POST',
                 headers: { 
@@ -104,7 +104,7 @@ export const processQuery = async (
                     model: settings.chatModel,
                     messages: [
                         { role: 'system', content: systemInstruction },
-                        { role: 'user', content: `CONTEXT:\n${context}\n\nQUESTION: ${query}` }
+                        { role: 'user', content: `CONTEXT (اسناد بازیابی شده):\n${context}\n\nQUESTION (سوال کاربر):\n${query}\n\nدستور: با توجه به اسناد بالا، پاسخی جامع، کامل و دقیق به زبان فارسی ارائه دهید.` }
                     ],
                     temperature: settings.temperature,
                     stream: false,
@@ -140,7 +140,7 @@ export const processQuery = async (
             const fetchError = err as any; 
             clearTimeout(timeoutId);
             if (fetchError.name === 'AbortError') {
-                throw new Error("تایم‌اوت ارتباط با مدل.");
+                throw new Error("تایم‌اوت ارتباط با مدل. تولید پاسخ جامع بیش از حد طول کشید.");
             }
             if (fetchError.message?.includes('Failed to fetch')) {
                 throw new Error("OLLAMA_CONNECTION_REFUSED");
